@@ -50,8 +50,8 @@ def create_app(config_name='development'):
     # Configure CORS with specific origins for better security
     allowed_origins = [
         "https://csr-backend-fzvn.onrender.com",
-        # Add any other domains that need access here
-        # For example: "http://localhost:3000" for local development
+        "https://app-blush-eta.vercel.app",  
+        "http://localhost:5173"  
     ]
     
     CORS(app, resources={r"/api/*": {"origins": allowed_origins}}, supports_credentials=True)
