@@ -120,11 +120,12 @@ def verify_otp():
         user.is_verified = True
         db.session.commit()
         
-        # Generate tokens
-        access_token = create_access_token(identity=user.id)
-        refresh_token = create_refresh_token(identity=user.id)
+        # Generate tokens - FIXED: Convert user.id to string
+        access_token = create_access_token(identity=str(user.id))
+        refresh_token = create_refresh_token(identity=str(user.id))
         
         print(f"OTP verified successfully for user: {user.username}")
+        print(f"Created token with identity type: {type(str(user.id))}")
         
         return jsonify({
             "message": "Account verified successfully",
@@ -187,14 +188,20 @@ def refresh():
         current_user_id = get_jwt_identity()
         print(f"Refreshing token for user ID: {current_user_id}")
         
+        # Convert to integer if it's a string
+        if isinstance(current_user_id, str) and current_user_id.isdigit():
+            user_id = int(current_user_id)
+        else:
+            user_id = current_user_id
+        
         # Check if user exists
-        user = User.query.get(current_user_id)
+        user = User.query.get(user_id)
         if not user:
             print(f"User with ID {current_user_id} not found during token refresh")
             return jsonify({"error": "User not found"}), 404
         
-        # Create new access token
-        new_access_token = create_access_token(identity=current_user_id)
+        # Create new access token - ensure we use a string for the identity
+        new_access_token = create_access_token(identity=str(user.id))
         print(f"New access token created for user: {user.username}")
         
         return jsonify({
@@ -215,11 +222,17 @@ def change_password():
         current_user_id = get_jwt_identity()
         print(f"Password change request for user ID: {current_user_id}")
         
+        # Convert to integer if it's a string
+        if isinstance(current_user_id, str) and current_user_id.isdigit():
+            user_id = int(current_user_id)
+        else:
+            user_id = current_user_id
+        
         if not all([data.get('current_password'), data.get('new_password')]):
             return jsonify({"error": "Current password and new password are required"}), 400
         
         # Get current user
-        user = User.query.get(current_user_id)
+        user = User.query.get(user_id)
         if not user:
             print(f"User with ID {current_user_id} not found")
             return jsonify({"error": "User not found"}), 404

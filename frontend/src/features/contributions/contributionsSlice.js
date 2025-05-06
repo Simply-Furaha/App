@@ -3,6 +3,8 @@ import contributionsService from './contributionsService';
 
 const initialState = {
   contributions: [],
+  transactionStatus: null,
+  checkoutRequestId: null,
   isLoading: false,
   isSuccess: false,
   isError: false,
@@ -30,6 +32,19 @@ export const makeContribution = createAsyncThunk(
       return await contributionsService.makeContribution(contributionData);
     } catch (error) {
       const message = error.response?.data?.error || 'Failed to make contribution';
+      return thunkAPI.rejectWithValue(message);
+    }
+  }
+);
+
+// Check transaction status
+export const checkTransactionStatus = createAsyncThunk(
+  'contributions/checkStatus',
+  async (checkoutRequestId, thunkAPI) => {
+    try {
+      return await contributionsService.checkTransactionStatus(checkoutRequestId);
+    } catch (error) {
+      const message = error.response?.data?.error || 'Failed to check transaction status';
       return thunkAPI.rejectWithValue(message);
     }
   }
@@ -71,8 +86,23 @@ const contributionsSlice = createSlice({
         state.isLoading = false;
         state.isSuccess = true;
         state.message = 'Contribution initiated successfully';
+        state.checkoutRequestId = action.payload.checkout_request_id;
       })
       .addCase(makeContribution.rejected, (state, action) => {
+        state.isLoading = false;
+        state.isError = true;
+        state.message = action.payload;
+      })
+      // Check transaction status
+      .addCase(checkTransactionStatus.pending, (state) => {
+        state.isLoading = true;
+      })
+      .addCase(checkTransactionStatus.fulfilled, (state, action) => {
+        state.isLoading = false;
+        state.isSuccess = true;
+        state.transactionStatus = action.payload.status;
+      })
+      .addCase(checkTransactionStatus.rejected, (state, action) => {
         state.isLoading = false;
         state.isError = true;
         state.message = action.payload;

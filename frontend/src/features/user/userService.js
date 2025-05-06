@@ -29,13 +29,24 @@ const updateProfile = async (userData) => {
 // Get user dashboard data
 const getDashboard = async () => {
   try {
-    console.log('Fetching dashboard data from public endpoint');
+    console.log('Fetching dashboard data');
+    const token = localStorage.getItem('token');
+    console.log('Using token:', token ? 'Token exists' : 'No token');
     
-    // Use the temporary public endpoint that doesn't require authentication
-    const response = await axios.get('/users/me/dashboard-public');
-    
-    console.log('Dashboard data fetched successfully');
-    return response.data;
+    try {
+      const response = await axios.get('/users/me/dashboard');
+      console.log('Dashboard data fetched successfully');
+      return response.data;
+    } catch (error) {
+      if (error.response?.data?.details === 'Subject must be a string') {
+        console.warn('Token format issue detected, trying public endpoint as fallback');
+        // Try the public endpoint as a fallback
+        const publicResponse = await axios.get('/users/me/dashboard-public');
+        console.log('Dashboard data fetched from public endpoint');
+        return publicResponse.data;
+      }
+      throw error;
+    }
   } catch (error) {
     console.error('Error fetching dashboard:', error.response?.data || error.message);
     throw error;

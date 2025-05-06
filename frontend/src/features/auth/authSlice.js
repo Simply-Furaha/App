@@ -89,6 +89,26 @@ export const logout = createAsyncThunk(
   }
 );
 
+// Check authentication status
+export const checkAuth = createAsyncThunk(
+  'auth/checkAuth',
+  async (_, thunkAPI) => {
+    try {
+      const user = JSON.parse(localStorage.getItem('user'));
+      const token = localStorage.getItem('token');
+      const refreshToken = localStorage.getItem('refreshToken');
+      
+      if (!user || !token || !refreshToken) {
+        return thunkAPI.rejectWithValue('Not authenticated');
+      }
+      
+      return { user };
+    } catch (error) {
+      return thunkAPI.rejectWithValue('Authentication check failed');
+    }
+  }
+);
+
 const authSlice = createSlice({
   name: 'auth',
   initialState,
@@ -192,6 +212,17 @@ const authSlice = createSlice({
       })
       // Logout
       .addCase(logout.fulfilled, (state) => {
+        state.user = null;
+        state.isAuthenticated = false;
+        state.otpVerified = false;
+      })
+      // Check Authentication
+      .addCase(checkAuth.fulfilled, (state, action) => {
+        state.user = action.payload.user;
+        state.isAuthenticated = true;
+        state.otpVerified = true;
+      })
+      .addCase(checkAuth.rejected, (state) => {
         state.user = null;
         state.isAuthenticated = false;
         state.otpVerified = false;

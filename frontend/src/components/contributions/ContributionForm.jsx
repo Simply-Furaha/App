@@ -1,8 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { Formik, Form } from 'formik';
 import * as Yup from 'yup';
-import { makeContribution } from '../../features/contributions/contributionsSlice';
+import { makeContribution, reset } from '../../features/contributions/contributionsSlice';
 import Input from '../common/Input';
 import Button from '../common/Button';
 import Alert from '../common/Alert';
@@ -10,47 +10,89 @@ import Card from '../common/Card';
 
 const ContributionForm = () => {
   const [showAlert, setShowAlert] = useState(false);
+  const [alertMessage, setAlertMessage] = useState('');
+  const [alertType, setAlertType] = useState('error');
+  
   const dispatch = useDispatch();
   
   const { isLoading, isSuccess, isError, message } = useSelector((state) => state.contributions);
+  const { user } = useSelector((state) => state.auth);
   
+  // Clear any previous states when component mounts
+  useEffect(() => {
+    dispatch(reset());
+  }, [dispatch]);
+  
+  // Handle success or error states
+  useEffect(() => {
+    if (isError) {
+      setShowAlert(true);
+      setAlertMessage(message || 'An error occurred while processing your request');
+      setAlertType('error');
+    }
+    
+    if (isSuccess) {
+      setShowAlert(true);
+      setAlertMessage('Payment request sent to your phone. Please check your phone and enter your M-PESA PIN to complete the transaction.');
+      setAlertType('success');
+    }
+  }, [isError, isSuccess, message]);
+  
+  // Initialize phone number with user's number if available
   const initialValues = {
-    amount: 2000
+    amount: 2000,
+    phone_number: user?.phone_number || ''
   };
+  
+  const phoneRegExp = /^(\+\d{1,3})?0?\d{9,10}$/;
   
   const validationSchema = Yup.object({
     amount: Yup.number()
       .required('Contribution amount is required')
-      .min(500, 'Minimum contribution is KES 500')
+      .min(500, 'Minimum contribution is KES 500'),
+    phone_number: Yup.string()
+      .required('Phone number is required')
+      .matches(phoneRegExp, 'Invalid phone number format. Use format: +254XXXXXXXXX or 07XXXXXXXX')
   });
   
   const handleSubmit = (values, { resetForm }) => {
-    dispatch(makeContribution({
-      amount: parseFloat(values.amount)
-    }));
+    // Format phone number to ensure it's in the correct format
+    let formattedPhone = values.phone_number;
     
-    if (isSuccess) {
-      resetForm();
+    // Remove any spaces
+    formattedPhone = formattedPhone.replace(/\s+/g, '');
+    
+    // If number starts with 0, replace with 254
+    if (formattedPhone.startsWith('0')) {
+      formattedPhone = '254' + formattedPhone.substring(1);
     }
+    
+    // If number doesn't have country code, add it
+    if (!formattedPhone.startsWith('+') && !formattedPhone.startsWith('254')) {
+      formattedPhone = '254' + formattedPhone;
+    }
+    
+    // Remove + sign if present as backend might expect numeric format
+    if (formattedPhone.startsWith('+')) {
+      formattedPhone = formattedPhone.substring(1);
+    }
+    
+    console.log('Submitting contribution with phone:', formattedPhone);
+    
+    dispatch(makeContribution({
+      amount: parseFloat(values.amount),
+      phone_number: formattedPhone
+    }));
   };
   
   return (
     <Card title="Make Monthly Contribution">
-      {showAlert && isError && (
+      {showAlert && (
         <Alert
-          type="error"
-          message={message}
+          type={alertType}
+          message={alertMessage}
           onClose={() => setShowAlert(false)}
-          autoClose={true}
-        />
-      )}
-      
-      {isSuccess && (
-        <Alert
-          type="success"
-          message="Contribution initiated. Please check your phone to complete the payment."
-          onClose={() => {}}
-          autoClose={true}
+          autoClose={false}
         />
       )}
       
@@ -58,6 +100,7 @@ const ContributionForm = () => {
         initialValues={initialValues}
         validationSchema={validationSchema}
         onSubmit={handleSubmit}
+        enableReinitialize
       >
         {({
           values,
@@ -81,6 +124,20 @@ const ContributionForm = () => {
               required
             />
             
+            <Input
+              label="M-PESA Phone Number"
+              name="phone_number"
+              type="text"
+              placeholder="Enter phone number e.g. 07XXXXXXXX"
+              value={values.phone_number}
+              onChange={handleChange}
+              onBlur={handleBlur}
+              error={errors.phone_number}
+              touched={touched.phone_number}
+              required
+              helpText="Enter the phone number that will receive the M-PESA payment request"
+            />
+            
             <div className="bg-yellow-50 p-4 mb-6 rounded-md">
               <div className="flex">
                 <div className="flex-shrink-0">
@@ -91,7 +148,7 @@ const ContributionForm = () => {
                 <div className="ml-3">
                   <h3 className="text-sm font-medium text-yellow-800">Payment Information</h3>
                   <div className="mt-1 text-sm text-yellow-700">
-                    <p>This will initiate an M-PESA payment request to your registered phone number. You will need to confirm the payment using your M-PESA PIN.</p>
+                    <p>This will initiate an M-PESA payment request to the phone number provided. You will need to confirm the payment using your M-PESA PIN when prompted on your phone.</p>
                   </div>
                 </div>
               </div>

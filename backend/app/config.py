@@ -25,13 +25,21 @@ class Config:
     MPESA_CONSUMER_SECRET = os.environ.get('MPESA_CONSUMER_SECRET')
     MPESA_SHORTCODE = os.environ.get('MPESA_SHORTCODE')
     MPESA_PASSKEY = os.environ.get('MPESA_PASSKEY')
-    MPESA_CALLBACK_URL = os.environ.get('MPESA_CALLBACK_URL')
+    MPESA_CALLBACK_URL = os.environ.get('MPESA_CALLBACK_URL', 'https://your-domain.com/api/mpesa/callback')
+    MPESA_VALIDATION_URL = os.environ.get('MPESA_VALIDATION_URL', 'https://your-domain.com/api/mpesa/validation')
+    MPESA_CONFIRMATION_URL = os.environ.get('MPESA_CONFIRMATION_URL', 'https://your-domain.com/api/mpesa/confirmation')
     MPESA_ACCOUNT_NUMBER = os.environ.get('MPESA_ACCOUNT_NUMBER', '01108919109300')
+    MPESA_PRODUCTION = os.environ.get('MPESA_PRODUCTION', 'false').lower() in ['true', 'on', '1']
 
 class DevelopmentConfig(Config):
     """Development configuration."""
     DEBUG = True
     SQLALCHEMY_DATABASE_URI = os.environ.get('SQLALCHEMY_DATABASE_URI', 'sqlite:///ninefund.db')
+    
+    # Override default callback URLs for development
+    MPESA_CALLBACK_URL = os.environ.get('MPESA_CALLBACK_URL', 'https://webhook.site/your-uuid')
+    MPESA_VALIDATION_URL = os.environ.get('MPESA_VALIDATION_URL', 'https://webhook.site/your-uuid')
+    MPESA_CONFIRMATION_URL = os.environ.get('MPESA_CONFIRMATION_URL', 'https://webhook.site/your-uuid')
 
 class TestingConfig(Config):
     """Testing configuration."""
@@ -42,6 +50,24 @@ class ProductionConfig(Config):
     """Production configuration."""
     SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URI')
     JWT_COOKIE_SECURE = True
+    
+    # Ensure all required Daraja configs are present in production
+    @classmethod
+    def init_app(cls, app):
+        Config.init_app(app)
+        
+        # Check required settings
+        required_settings = [
+            'MPESA_CONSUMER_KEY', 
+            'MPESA_CONSUMER_SECRET',
+            'MPESA_SHORTCODE',
+            'MPESA_PASSKEY',
+            'MPESA_CALLBACK_URL'
+        ]
+        
+        for setting in required_settings:
+            if not app.config.get(setting):
+                raise ValueError(f"Missing required configuration: {setting}")
 
 config_options = {
     'development': DevelopmentConfig,

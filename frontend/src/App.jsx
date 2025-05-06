@@ -18,6 +18,7 @@ import AdminUsers from './pages/AdminUsers';
 import AdminLoans from './pages/AdminLoans';
 import AdminInvestments from './pages/AdminInvestments';
 import NotFound from './pages/NotFound';
+import ContributionChart from './components/dashboard/ContributionChart';
 
 // Protected Route component
 const ProtectedRoute = ({ children, requireAdmin = false }) => {
@@ -56,6 +57,11 @@ const App = () => {
             <Route path="/loans" element={
               <ProtectedRoute>
                 <Loans />
+              </ProtectedRoute>
+            } />
+              <Route path="/charts" element={
+              <ProtectedRoute>
+                <ContributionChart />
               </ProtectedRoute>
             } />
             <Route path="/loans/:loanId" element={

@@ -28,13 +28,8 @@ const Home = () => {
             ) : (
               <div className="space-x-4">
                 <Link to="/login">
-                  <Button variant="outline" size="lg">
-                    Sign In
-                  </Button>
-                </Link>
-                <Link to="/register">
                   <Button size="lg">
-                    Get Started
+                    Sign In
                   </Button>
                 </Link>
               </div>
@@ -42,16 +37,16 @@ const Home = () => {
           </div>
         </div>
         
-        {/* Decorative Wave */}
-        <div className="absolute bottom-0 left-0 right-0">
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1440 320" className="w-full h-auto">
+        {/* Decorative Wave - Extended further to ensure buttons are visible */}
+        <div className="absolute bottom-0 left-0 right-0" style={{ transform: 'translateY(25%)' }}>
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1440 320" className="w-full h-auto" style={{ minHeight: '140px' }}>
             <path fill="#ffffff" fillOpacity="1" d="M0,96L48,112C96,128,192,160,288,160C384,160,480,128,576,112C672,96,768,96,864,106.7C960,117,1056,139,1152,133.3C1248,128,1344,96,1392,80L1440,64L1440,320L1392,320C1344,320,1248,320,1152,320C1056,320,960,320,864,320C768,320,672,320,576,320C480,320,384,320,288,320C192,320,96,320,48,320L0,320Z"></path>
           </svg>
         </div>
       </div>
       
-      {/* Features Section */}
-      <div className="py-16 md:py-24 bg-white">
+      {/* Features Section - Increased padding at the top to accommodate extended wave */}
+      <div className="py-16 md:py-24 bg-white" style={{ paddingTop: '8rem' }}>
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-16">
             <h2 className="text-3xl md:text-4xl font-bold text-gray-900 mb-4">
@@ -180,9 +175,9 @@ const Home = () => {
               </Button>
             </Link>
           ) : (
-            <Link to="/register">
+            <Link to="/login">
               <Button variant="outline" size="lg">
-                Create Your Account
+                Get Started
               </Button>
             </Link>
           )}

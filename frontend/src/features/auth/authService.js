@@ -20,11 +20,33 @@ const verifyOtp = async (data) => {
     const response = await axios.post('/auth/verify-otp', data);
     
     console.log('OTP verification successful, storing tokens');
-    if (response.data) {
+    if (response.data && response.data.access_token && response.data.refresh_token) {
       // Store the tokens
       localStorage.setItem('token', response.data.access_token);
       localStorage.setItem('refreshToken', response.data.refresh_token);
       localStorage.setItem('user', JSON.stringify(response.data.user));
+      
+      // Verify tokens were stored correctly
+      const storedToken = localStorage.getItem('token');
+      const storedRefreshToken = localStorage.getItem('refreshToken');
+      
+      console.log('Tokens stored successfully:', 
+        storedToken ? 'Access token set' : 'No access token', 
+        storedRefreshToken ? 'Refresh token set' : 'No refresh token');
+      
+      // Debug the token format if needed
+      try {
+        const tokenParts = storedToken.split('.');
+        if (tokenParts.length === 3) {
+          const payload = JSON.parse(atob(tokenParts[1]));
+          console.log('Token subject type:', typeof payload.sub);
+          console.log('Token expiry:', new Date(payload.exp * 1000).toLocaleString());
+        }
+      } catch (e) {
+        console.error('Error debugging token:', e);
+      }
+    } else {
+      console.error('Missing tokens in response:', response.data);
     }
     
     return response.data;

@@ -13,6 +13,7 @@ import { formatCurrency } from '../../utils/formatters';
 
 const LoanApplicationForm = () => {
   const [showAlert, setShowAlert] = useState(false);
+  const [alertMessage, setAlertMessage] = useState('');
   const dispatch = useDispatch();
   const navigate = useNavigate();
   
@@ -30,16 +31,16 @@ const LoanApplicationForm = () => {
   useEffect(() => {
     if (isError) {
       setShowAlert(true);
+      setAlertMessage(message);
     }
     
     if (isSuccess) {
       navigate('/loans');
     }
-  }, [isError, isSuccess, navigate]);
+  }, [isError, isSuccess, navigate, message]);
   
   const initialValues = {
     amount: '',
-    purpose: '',
     agree: false
   };
   
@@ -51,26 +52,45 @@ const LoanApplicationForm = () => {
         loanLimit?.available_loan_limit || 0, 
         `Amount cannot exceed your available limit of ${formatCurrency(loanLimit?.available_loan_limit || 0)}`
       ),
-    purpose: Yup.string()
-      .required('Loan purpose is required')
-      .min(10, 'Please provide more details about the purpose'),
     agree: Yup.boolean()
       .oneOf([true], 'You must agree to the terms')
   });
   
   const handleSubmit = (values) => {
-    dispatch(applyForLoan({
-      amount: parseFloat(values.amount),
-      purpose: values.purpose
-    }));
+    try {
+      // Ensure amount is a valid number
+      const amount = parseFloat(values.amount);
+      
+      if (isNaN(amount) || amount <= 0) {
+        setShowAlert(true);
+        setAlertMessage('Please enter a valid loan amount');
+        return;
+      }
+      
+      // Check if amount exceeds available limit
+      if (amount > (loanLimit?.available_loan_limit || 0)) {
+        setShowAlert(true);
+        setAlertMessage('Loan amount exceeds your available limit');
+        return;
+      }
+      
+      console.log('Submitting loan application with amount:', amount);
+      
+      // Match your loansService.js implementation which expects just an amount
+      dispatch(applyForLoan({ amount }));
+    } catch (error) {
+      setShowAlert(true);
+      setAlertMessage('An error occurred while processing your application');
+      console.error('Loan application error:', error);
+    }
   };
   
   return (
     <Card title="Loan Application">
-      {showAlert && isError && (
+      {showAlert && (
         <Alert
           type="error"
-          message={message}
+          message={alertMessage || message}
           onClose={() => setShowAlert(false)}
           autoClose={true}
         />
@@ -90,7 +110,7 @@ const LoanApplicationForm = () => {
                 <p className="text-xl font-semibold">{formatCurrency(loanLimit?.total_contribution || 0)}</p>
               </div>
               <div>
-                <p className="text-sm text-gray-600">Maximum Loan Limit (80%)</p>
+                <p className="text-sm text-gray-600">Your Maximum Loan Limit</p>
                 <p className="text-xl font-semibold">{formatCurrency(loanLimit?.loan_limit || 0)}</p>
               </div>
               <div>
@@ -128,28 +148,6 @@ const LoanApplicationForm = () => {
                   touched={touched.amount}
                   required
                 />
-                
-                <div className="mb-4">
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Loan Purpose <span className="text-red-500">*</span>
-                  </label>
-                  <textarea
-                    name="purpose"
-                    rows="4"
-                    placeholder="Describe the purpose of this loan"
-                    value={values.purpose}
-                    onChange={handleChange}
-                    onBlur={handleBlur}
-                    className={`
-                      w-full px-3 py-2 border rounded-md shadow-sm placeholder-gray-400 
-                      focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500
-                      ${errors.purpose && touched.purpose ? 'border-red-500' : 'border-gray-300'}
-                    `}
-                  ></textarea>
-                  {errors.purpose && touched.purpose && (
-                    <p className="mt-1 text-sm text-red-600">{errors.purpose}</p>
-                  )}
-                </div>
                 
                 <div className="mb-6">
                   <div className="flex items-start">

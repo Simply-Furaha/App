@@ -13,14 +13,17 @@ def get_current_user():
     """Get current user information"""
     try:
         current_user_id = get_jwt_identity()
-        print(f"Getting user info for user ID: {current_user_id}")
         
-        user = User.query.get(current_user_id)
+        # Convert to integer if it's a string
+        if isinstance(current_user_id, str) and current_user_id.isdigit():
+            user_id = int(current_user_id)
+        else:
+            user_id = current_user_id
+        
+        user = User.query.get(user_id)
         if not user:
-            print(f"User with ID {current_user_id} not found")
             return jsonify({"error": "User not found"}), 404
         
-        print(f"Found user: {user.username}")
         return jsonify(user.to_dict()), 200
     except Exception as e:
         import traceback
@@ -35,11 +38,15 @@ def update_user():
     try:
         data = request.get_json()
         current_user_id = get_jwt_identity()
-        print(f"Updating user with ID: {current_user_id}")
         
-        user = User.query.get(current_user_id)
+        # Convert to integer if it's a string
+        if isinstance(current_user_id, str) and current_user_id.isdigit():
+            user_id = int(current_user_id)
+        else:
+            user_id = current_user_id
+        
+        user = User.query.get(user_id)
         if not user:
-            print(f"User with ID {current_user_id} not found")
             return jsonify({"error": "User not found"}), 404
         
         # Update fields if provided
@@ -57,7 +64,6 @@ def update_user():
             user.email = data['email']
         
         db.session.commit()
-        print(f"User {user.username} updated successfully")
         
         return jsonify({
             "message": "User information updated successfully",
@@ -76,15 +82,18 @@ def get_user_contributions():
     """Get all contributions for the current user"""
     try:
         current_user_id = get_jwt_identity()
-        print(f"Getting contributions for user ID: {current_user_id}")
         
-        user = User.query.get(current_user_id)
+        # Convert to integer if it's a string
+        if isinstance(current_user_id, str) and current_user_id.isdigit():
+            user_id = int(current_user_id)
+        else:
+            user_id = current_user_id
+        
+        user = User.query.get(user_id)
         if not user:
-            print(f"User with ID {current_user_id} not found")
             return jsonify({"error": "User not found"}), 404
         
         contributions = user.contributions.order_by(Contribution.month.desc()).all()
-        print(f"Found {len(contributions)} contributions for user {user.username}")
         
         return jsonify({
             "contributions": [contribution.to_dict() for contribution in contributions],
@@ -102,14 +111,17 @@ def get_loan_limit():
     """Get user's loan limit and available amount"""
     try:
         current_user_id = get_jwt_identity()
-        print(f"Getting loan limit for user ID: {current_user_id}")
         
-        user = User.query.get(current_user_id)
+        # Convert to integer if it's a string
+        if isinstance(current_user_id, str) and current_user_id.isdigit():
+            user_id = int(current_user_id)
+        else:
+            user_id = current_user_id
+        
+        user = User.query.get(user_id)
         if not user:
-            print(f"User with ID {current_user_id} not found")
             return jsonify({"error": "User not found"}), 404
         
-        print(f"Found loan limits for user {user.username}")
         return jsonify({
             "total_contribution": user.total_contribution(),
             "loan_limit": user.loan_limit(),
@@ -127,17 +139,17 @@ def get_loan_limit():
 def get_user_dashboard():
     """Get user's dashboard data with all relevant information"""
     try:
-        # Get JWT identity and print it for debugging
+        # Get JWT identity and convert to integer if needed
         current_user_id = get_jwt_identity()
-        print(f"Processing dashboard for user ID: {current_user_id}")
+        if isinstance(current_user_id, str) and current_user_id.isdigit():
+            user_id = int(current_user_id)
+        else:
+            user_id = current_user_id
         
         # Get the user
-        user = User.query.get(current_user_id)
+        user = User.query.get(user_id)
         if not user:
-            print(f"User with ID {current_user_id} not found in database")
             return jsonify({"error": "User not found"}), 404
-        
-        print(f"Found user: {user.username}")
         
         # Create a basic dashboard response
         dashboard_data = {
@@ -150,17 +162,22 @@ def get_user_dashboard():
             }
         }
         
+        # Calculate user's total contribution
+        user_total_contribution = user.total_contribution()
+        
+        # Calculate total fund value by explicitly querying all contributions
+        all_contributions = Contribution.query.all()
+        total_fund_value = sum(contribution.amount for contribution in all_contributions)
+        dashboard_data["total_fund_value"] = total_fund_value
+        
         # Add contributions with error handling
         try:
-            total_contribution = user.total_contribution()
             recent_contributions = user.contributions.order_by(Contribution.month.desc()).limit(6).all()
             dashboard_data["contributions"] = {
-                "total": total_contribution,
+                "total": user_total_contribution,
                 "recent": [contribution.to_dict() for contribution in recent_contributions]
             }
-            print(f"Added contributions: {len(recent_contributions)} recent contributions")
         except Exception as e:
-            print(f"Error getting contributions: {str(e)}")
             dashboard_data["contributions"] = {
                 "total": 0,
                 "recent": []
@@ -176,9 +193,7 @@ def get_user_dashboard():
                 "active": [loan.to_dict() for loan in active_loans],
                 "pending": [loan.to_dict() for loan in pending_loans]
             }
-            print(f"Added loans: {len(active_loans)} active, {len(pending_loans)} pending")
         except Exception as e:
-            print(f"Error getting loans: {str(e)}")
             dashboard_data["loans"] = {
                 "limit": 0,
                 "available": 0,
@@ -194,14 +209,11 @@ def get_user_dashboard():
             dashboard_data["external_investments"] = {
                 "total": total_external_investment
             }
-            print(f"Added external investments: {total_external_investment} total")
         except Exception as e:
-            print(f"Error getting external investments: {str(e)}")
             dashboard_data["external_investments"] = {
                 "total": 0
             }
         
-        print("Dashboard data successfully compiled")
         return jsonify(dashboard_data), 200
     except Exception as e:
         import traceback
@@ -213,17 +225,19 @@ def get_user_dashboard():
 def get_user_dashboard_public():
     """Temporary dashboard endpoint without auth for testing"""
     try:
-        print("Accessing public dashboard endpoint")
-        
         # Create a mock user or get the first user from the database
-        user = User.query.first()  # Get the first user for testing
+        user = User.query.first()
         if not user:
-            print("No users found in database")
             return jsonify({"error": "No users in database"}), 404
         
-        print(f"Using user {user.username} for public dashboard")
+        # Calculate user's total contribution
+        user_total_contribution = user.total_contribution()
         
-        # Build dashboard data with error handling
+        # Calculate total fund value by explicitly querying all contributions
+        all_contributions = Contribution.query.all()
+        total_fund_value = sum(contribution.amount for contribution in all_contributions)
+        
+        # Build dashboard data
         dashboard_data = {
             "user": {
                 "id": user.id,
@@ -231,10 +245,11 @@ def get_user_dashboard_public():
                 "last_name": user.last_name,
                 "username": user.username,
                 "is_admin": user.is_admin if hasattr(user, 'is_admin') else False
-            }
+            },
+            "total_fund_value": total_fund_value
         }
         
-        # Add contributions with error handling
+        # Add contributions
         try:
             total_contribution = user.total_contribution()
             recent_contributions = user.contributions.order_by(Contribution.month.desc()).limit(6).all()
@@ -243,13 +258,12 @@ def get_user_dashboard_public():
                 "recent": [contribution.to_dict() for contribution in recent_contributions]
             }
         except Exception as e:
-            print(f"Error getting contributions for public dashboard: {str(e)}")
             dashboard_data["contributions"] = {
                 "total": 0,
                 "recent": []
             }
         
-        # Add loans with error handling
+        # Add loans
         try:
             active_loans = user.current_loans()
             pending_loans = user.loans.filter_by(status='pending').all()
@@ -260,7 +274,6 @@ def get_user_dashboard_public():
                 "pending": [loan.to_dict() for loan in pending_loans]
             }
         except Exception as e:
-            print(f"Error getting loans for public dashboard: {str(e)}")
             dashboard_data["loans"] = {
                 "limit": 0,
                 "available": 0,
@@ -268,7 +281,7 @@ def get_user_dashboard_public():
                 "pending": []
             }
         
-        # Add external investments with error handling
+        # Add external investments
         try:
             from ..models.investment import ExternalInvestment
             external_investments = ExternalInvestment.query.filter_by(status='active').all()
@@ -277,12 +290,10 @@ def get_user_dashboard_public():
                 "total": total_external_investment
             }
         except Exception as e:
-            print(f"Error getting external investments for public dashboard: {str(e)}")
             dashboard_data["external_investments"] = {
                 "total": 0
             }
         
-        print("Public dashboard data successfully compiled")
         return jsonify(dashboard_data), 200
     except Exception as e:
         import traceback

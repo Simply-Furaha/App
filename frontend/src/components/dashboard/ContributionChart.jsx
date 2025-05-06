@@ -27,7 +27,7 @@ ChartJS.register(
   Filler
 );
 
-const ContributionChart = ({ contributions, title = 'Contribution History' }) => {
+const ContributionChart = ({ contributions, title = 'Contribution History For Last 6 Months' }) => {
   const [chartData, setChartData] = useState({
     labels: [],
     datasets: []

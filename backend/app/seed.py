@@ -111,11 +111,12 @@ def seed_database():
         ),
         User(
             username="byron",
-            email="byron@example.com",
+            email="wellfuraha@gmail.com",
             password="password123",
             first_name="Byron",
             last_name="Miller",
             phone_number="+254701000007",
+            is_admin=True,
             is_verified=True
         ),
         User(

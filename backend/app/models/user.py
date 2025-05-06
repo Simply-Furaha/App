@@ -40,8 +40,8 @@ class User(db.Model):
         return sum(contribution.amount for contribution in self.contributions)
     
     def loan_limit(self):
-        """Calculate 80% of total contributions as loan limit"""
-        return self.total_contribution() * 0.8
+        """Calculate 100% of total contributions as loan limit (changed from 80%)"""
+        return self.total_contribution() * 1.0
     
     def current_loans(self):
         """Get active loans (not fully paid)"""

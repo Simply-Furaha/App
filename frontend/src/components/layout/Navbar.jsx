@@ -47,8 +47,8 @@ const Navbar = () => {
                     <Link to="/login" className="text-white hover:bg-blue-500 px-3 py-2 rounded-md font-medium">
                       Login
                     </Link>
-                    <Link to="/register" className="text-white hover:bg-blue-500 px-3 py-2 rounded-md font-medium">
-                      Register
+                    <Link to="/#" className="text-white hover:bg-blue-500 px-3 py-2 rounded-md font-medium">
+                      Contact Admin to Register
                     </Link>
                   </>
                 )}
@@ -174,11 +174,11 @@ const Navbar = () => {
                 Login
               </Link>
               <Link 
-                to="/register" 
+                to="/" 
                 className="text-white hover:bg-blue-500 block px-3 py-2 rounded-md font-medium"
                 onClick={() => setIsMenuOpen(false)}
               >
-                Register
+                Contact Admin to Register
               </Link>
             </>
           )}

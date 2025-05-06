@@ -24,14 +24,43 @@ class Loan(db.Model):
     payments = db.relationship('LoanPayment', back_populates='loan', lazy='dynamic')
     
     def __init__(self, **kwargs):
+        # Set default interest_rate if not provided
+        if 'interest_rate' not in kwargs:
+            kwargs['interest_rate'] = 5.0
+            
+        # Set defaults for other fields if not provided
+        if 'paid_amount' not in kwargs:
+            kwargs['paid_amount'] = 0.0
+            
+        # Initialize instance with the provided kwargs
         super(Loan, self).__init__(**kwargs)
+        
+        # Calculate loan details after initialization
         self.calculate_loan_details()
     
     def calculate_loan_details(self):
         """Calculate loan amount due, due date, and unpaid balance"""
+        # Ensure amount and interest_rate are set and not None
+        if self.amount is None:
+            self.amount = 0.0
+            
+        if self.interest_rate is None:
+            self.interest_rate = 5.0
+            
+        # Calculate interest amount and amount due
         interest_amount = (self.amount * self.interest_rate) / 100
         self.amount_due = self.amount + interest_amount
-        self.due_date = self.borrowed_date + timedelta(days=30)
+        
+        # Set due date if borrowed_date is not None
+        if self.borrowed_date:
+            self.due_date = self.borrowed_date + timedelta(days=30)
+        else:
+            self.due_date = datetime.utcnow() + timedelta(days=30)
+        
+        # Calculate unpaid balance
+        if self.paid_amount is None:
+            self.paid_amount = 0.0
+            
         self.unpaid_balance = self.amount_due - self.paid_amount
     
     def approve_loan(self):

@@ -1,6 +1,6 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
-import { Link } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { getLoans, reset } from '../features/loans/loansSlice';
 import { getLoanLimit } from '../features/user/userSlice';
 import Card from '../components/common/Card';
@@ -10,10 +10,13 @@ import { formatCurrency, formatDate, formatLoanStatus } from '../utils/formatter
 
 const Loans = () => {
   const dispatch = useDispatch();
+  const navigate = useNavigate();
   const { loans, isLoading: isLoansLoading } = useSelector((state) => state.loans);
   const { loanLimit, isLoading: isLimitLoading } = useSelector((state) => state.user);
+  const [isNavigating, setIsNavigating] = useState(false);
   
   useEffect(() => {
+    // Fetch loans and loan limit when component mounts
     dispatch(getLoans());
     dispatch(getLoanLimit());
     
@@ -21,6 +24,11 @@ const Loans = () => {
       dispatch(reset());
     };
   }, [dispatch]);
+  
+  // Debug output for loan limit
+  useEffect(() => {
+    console.log('Loan limit state:', loanLimit);
+  }, [loanLimit]);
   
   const columns = [
     {
@@ -63,12 +71,12 @@ const Loans = () => {
     {
       header: 'Actions',
       render: (loan) => (
-        <Link
-          to={`/loans/${loan.id}`}
+        <button
+          onClick={() => navigate(`/loans/${loan.id}`)}
           className="text-blue-600 hover:text-blue-800"
         >
           View
-        </Link>
+        </button>
       )
     }
   ];
@@ -77,7 +85,21 @@ const Loans = () => {
   const activeLoans = loans?.filter(loan => loan.status === 'approved') || [];
   const paidLoans = loans?.filter(loan => loan.status === 'paid') || [];
   
-  const isLoading = isLoansLoading || isLimitLoading;
+  const isLoading = isLoansLoading || isLimitLoading || isNavigating;
+  
+  // Handle apply loan button click
+  const handleApplyLoan = () => {
+    console.log('Apply loan button clicked');
+    setIsNavigating(true);
+    
+    // Force navigation to apply-loan page
+    setTimeout(() => {
+      console.log('Navigating to /apply-loan');
+      window.location.href = '/apply-loan';
+      // Alternative to React Router's navigate which might be having issues
+      // navigate('/apply-loan', { replace: true });
+    }, 100);
+  };
   
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -89,14 +111,13 @@ const Loans = () => {
           </p>
         </div>
         <div className="mt-4 md:mt-0">
-          <Link to="/apply-loan">
-            <Button
-              variant="primary"
-              disabled={isLoading || (loanLimit?.available_loan_limit <= 0)}
-            >
-              Apply for Loan
-            </Button>
-          </Link>
+          <button
+            className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded"
+            onClick={handleApplyLoan}
+            disabled={isLoading}
+          >
+            Apply for Loan
+          </button>
         </div>
       </div>
       
@@ -204,11 +225,12 @@ const Loans = () => {
                 You haven't applied for any loans yet.
               </p>
               <div className="mt-6">
-                <Link to="/apply-loan">
-                  <Button variant="primary">
-                    Apply for Your First Loan
-                  </Button>
-                </Link>
+                <button
+                  className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded"
+                  onClick={handleApplyLoan}
+                >
+                  Apply for Your First Loan
+                </button>
               </div>
             </div>
           )}

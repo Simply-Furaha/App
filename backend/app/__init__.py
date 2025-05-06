@@ -7,6 +7,7 @@ from .models import db
 from .config import config_options
 import os
 from datetime import timedelta
+from .models.user import User  # Make sure to import User model
 
 # Initialize extensions
 jwt = JWTManager()
@@ -28,6 +29,21 @@ def create_app(config_name='development'):
     # Initialize extensions
     db.init_app(app)
     jwt.init_app(app)
+    
+    # Add these JWT identity handlers to fix the "Subject must be a string" error
+    @jwt.user_identity_loader
+    def user_identity_loader(identity):
+        # Always convert identity to string when creating tokens
+        return str(identity)
+
+    @jwt.user_lookup_loader
+    def user_lookup_loader(jwt_header, jwt_data):
+        # Convert back to integer when loading from token
+        identity = jwt_data["sub"]
+        if isinstance(identity, str) and identity.isdigit():
+            return User.query.get(int(identity))
+        return User.query.get(identity)
+    
     migrate.init_app(app, db)
     mail.init_app(app)
     

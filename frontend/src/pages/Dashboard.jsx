@@ -4,7 +4,8 @@ import { getDashboard } from '../features/user/userSlice';
 import StatCard from '../components/dashboard/StatCard';
 import ContributionChart from '../components/dashboard/ContributionChart';
 import LoanSummary from '../components/dashboard/LoanSummary';
-import InvestmentOverview from '../components/dashboard/InvestmentOverview';
+import LoanApplicationForm from '../components/loans/LoanApplicationForm';
+import ContributionSharesChart from './ContributionSharesChart';
 import { formatCurrency } from '../utils/formatters';
 
 const Dashboard = () => {
@@ -16,7 +17,6 @@ const Dashboard = () => {
     dispatch(getDashboard());
   }, [dispatch]);
   
-  // Get greeting based on time of day
   const getGreeting = () => {
     const hour = new Date().getHours();
     if (hour < 12) return 'Good morning';
@@ -31,6 +31,17 @@ const Dashboard = () => {
       </div>
     );
   }
+  
+  // Calculate share percentage safely
+  const calculateSharePercentage = () => {
+    const total = dashboard.total_fund_value || 0;
+    const userTotal = dashboard.contributions?.total || 0;
+    
+    if (total <= 0) return "0.00%";
+    
+    const percentage = (userTotal / total) * 100;
+    return `${percentage.toFixed(2)}%`;
+  };
   
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -78,11 +89,12 @@ const Dashboard = () => {
         />
         
         <StatCard
-          title="External Investments"
-          value={formatCurrency(dashboard.external_investments.total)}
+          title="Your Shares"
+          value={calculateSharePercentage()}
           icon={
             <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 3.055A9.001 9.001 0 1020.945 13H11V3.055z" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20.488 9H15V3.512A9.025 9.025 0 0120.488 9z" />
             </svg>
           }
           color="purple"
@@ -99,8 +111,9 @@ const Dashboard = () => {
       </div>
       
       <div className="mb-8">
-        <InvestmentOverview 
-          totalInvestment={dashboard.external_investments.total} 
+        <ContributionSharesChart 
+          userContribution={dashboard.contributions.total || 0} 
+          totalContributions={dashboard.total_fund_value || 0} 
         />
       </div>
     </div>
