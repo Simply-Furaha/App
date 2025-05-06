@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-const API_URL = 'https://csr-backend-fzvn.onrender.com/api';
+const API_URL = 'https://nine-c20e.onrender.com/api';
 
 const axiosInstance = axios.create({
   baseURL: API_URL,
