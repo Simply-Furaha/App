@@ -1,0 +1,9 @@
+#python virtua`l environment
+.venv/
+#pycharm project files
+.idea/
+#pycharm project files
+*.iml
+#pycharm project files
+*.ipr
+#pycharm project files
