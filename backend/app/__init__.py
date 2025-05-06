@@ -47,8 +47,14 @@ def create_app(config_name='development'):
     migrate.init_app(app, db)
     mail.init_app(app)
     
-    # Configure CORS with support for credentials
-    CORS(app, resources={r"/api/*": {"origins": "*"}}, supports_credentials=True)
+    # Configure CORS with specific origins for better security
+    allowed_origins = [
+        "https://csr-backend-fzvn.onrender.com",
+        # Add any other domains that need access here
+        # For example: "http://localhost:3000" for local development
+    ]
+    
+    CORS(app, resources={r"/api/*": {"origins": allowed_origins}}, supports_credentials=True)
     
     # Add JWT error handlers
     @jwt.invalid_token_loader
