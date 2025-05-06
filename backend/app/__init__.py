@@ -47,14 +47,8 @@ def create_app(config_name='development'):
     migrate.init_app(app, db)
     mail.init_app(app)
     
-    # IMPORTANT: Apply CORS to the entire application with all methods allowed
-    CORS(app, 
-         origins=["https://app-blush-eta.vercel.app", "http://localhost:3000"],
-         supports_credentials=True,
-         methods=["GET", "HEAD", "POST", "OPTIONS", "PUT", "PATCH", "DELETE"],
-         allow_headers=["Content-Type", "Authorization", "X-Requested-With"],
-         expose_headers=["Content-Type", "Authorization"],
-         max_age=600)
+    # Configure CORS with support for credentials
+    CORS(app, resources={r"/api/*": {"origins": "*"}}, supports_credentials=True)
     
     # Add JWT error handlers
     @jwt.invalid_token_loader
@@ -88,11 +82,6 @@ def create_app(config_name='development'):
         if hasattr(e, 'code'):
             code = e.code
         return jsonify(error=str(e)), code
-    
-    # Add CORS pre-flight route to ensure CORS is working for all routes
-    @app.route('/api/test-cors', methods=['OPTIONS', 'GET'])
-    def test_cors():
-        return jsonify({"message": "CORS is working"})
     
     # Register blueprints
     from .routes.auth import auth_bp
