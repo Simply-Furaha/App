@@ -1,3 +1,4 @@
+# app/models/user.py
 from datetime import datetime
 from werkzeug.security import generate_password_hash, check_password_hash
 from . import db
@@ -40,8 +41,13 @@ class User(db.Model):
         return sum(contribution.amount for contribution in self.contributions)
     
     def loan_limit(self):
-        """Calculate 100% of total contributions as loan limit (changed from 80%)"""
-        return self.total_contribution() * 1.0
+        """Calculate loan limit: 100,000 fixed if total contributions >= 100,000, 
+        otherwise equal to total contributions"""
+        total = self.total_contribution()
+        if total >= 100000:
+            return 100000
+        else:
+            return total
     
     def current_loans(self):
         """Get active loans (not fully paid)"""

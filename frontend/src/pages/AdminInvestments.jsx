@@ -1,3 +1,4 @@
+// src/pages/AdminInvestments.jsx
 import React, { useEffect, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { getInvestments, createInvestment, updateInvestment, reset } from '../features/admin/adminSlice';
@@ -14,6 +15,7 @@ const AdminInvestments = () => {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showUpdateModal, setShowUpdateModal] = useState(false);
   const [currentInvestment, setCurrentInvestment] = useState(null);
+  const [operationInProgress, setOperationInProgress] = useState(false);
   
   const dispatch = useDispatch();
   const { investments, isLoading, isSuccess, isError, message } = useSelector((state) => state.admin);
@@ -29,15 +31,28 @@ const AdminInvestments = () => {
   useEffect(() => {
     if (isError) {
       setShowAlert(true);
+      setOperationInProgress(false);
     }
     
-    if (isSuccess && (showCreateModal || showUpdateModal)) {
-      setShowCreateModal(false);
-      setShowUpdateModal(false);
+    if (isSuccess && operationInProgress) {
+      // Only close modals if an operation was in progress
+      if (showCreateModal) {
+        setShowCreateModal(false);
+      }
+      if (showUpdateModal) {
+        setShowUpdateModal(false);
+        setCurrentInvestment(null);
+      }
+      setOperationInProgress(false);
+      
+      // Refresh investments after successful operation
+      dispatch(getInvestments());
     }
-  }, [isError, isSuccess, showCreateModal, showUpdateModal]);
+  }, [isError, isSuccess, operationInProgress, showCreateModal, showUpdateModal, dispatch]);
   
   const handleCreateInvestment = (values) => {
+    setOperationInProgress(true);
+    console.log("Creating investment:", values);
     dispatch(createInvestment({
       amount: parseFloat(values.amount),
       description: values.description,
@@ -47,6 +62,8 @@ const AdminInvestments = () => {
   };
   
   const handleUpdateInvestment = (values) => {
+    setOperationInProgress(true);
+    console.log("Updating investment:", { id: currentInvestment.id, ...values });
     dispatch(updateInvestment({
       id: currentInvestment.id,
       investmentData: {
@@ -61,6 +78,20 @@ const AdminInvestments = () => {
   const handleUpdateClick = (investment) => {
     setCurrentInvestment(investment);
     setShowUpdateModal(true);
+  };
+  
+  // Close modal handlers that don't dispatch actions
+  const handleCloseCreateModal = () => {
+    if (!operationInProgress) {
+      setShowCreateModal(false);
+    }
+  };
+
+  const handleCloseUpdateModal = () => {
+    if (!operationInProgress) {
+      setShowUpdateModal(false);
+      setCurrentInvestment(null);
+    }
   };
   
   const columns = [
@@ -150,7 +181,7 @@ const AdminInvestments = () => {
           </div>
         </div>
         
-        {isLoading ? (
+        {isLoading && !operationInProgress ? (
           <div className="flex justify-center py-12">
             <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div>
           </div>
@@ -168,7 +199,7 @@ const AdminInvestments = () => {
       <Modal
         isOpen={showCreateModal}
         title="Create New Investment"
-        onClose={() => setShowCreateModal(false)}
+        onClose={handleCloseCreateModal}
       >
         <div className="p-6">
           <form onSubmit={(e) => {
@@ -230,16 +261,17 @@ const AdminInvestments = () => {
               <Button
                 type="button"
                 variant="secondary"
-                onClick={() => setShowCreateModal(false)}
+                onClick={handleCloseCreateModal}
+                disabled={operationInProgress || isLoading}
               >
                 Cancel
               </Button>
               <Button
                 type="submit"
                 variant="primary"
-                disabled={isLoading}
+                disabled={operationInProgress || isLoading}
               >
-                {isLoading ? 'Creating...' : 'Create Investment'}
+                {(operationInProgress || isLoading) ? 'Creating...' : 'Create Investment'}
               </Button>
             </div>
           </form>
@@ -250,7 +282,7 @@ const AdminInvestments = () => {
       <Modal
         isOpen={showUpdateModal}
         title="Update Investment"
-        onClose={() => setShowUpdateModal(false)}
+        onClose={handleCloseUpdateModal}
       >
         {currentInvestment && (
           <div className="p-6">
@@ -316,16 +348,17 @@ const AdminInvestments = () => {
                 <Button
                   type="button"
                   variant="secondary"
-                  onClick={() => setShowUpdateModal(false)}
+                  onClick={handleCloseUpdateModal}
+                  disabled={operationInProgress || isLoading}
                 >
                   Cancel
                 </Button>
                 <Button
                   type="submit"
                   variant="primary"
-                  disabled={isLoading}
+                  disabled={operationInProgress || isLoading}
                 >
-                  {isLoading ? 'Updating...' : 'Update Investment'}
+                  {(operationInProgress || isLoading) ? 'Updating...' : 'Update Investment'}
                 </Button>
               </div>
             </form>

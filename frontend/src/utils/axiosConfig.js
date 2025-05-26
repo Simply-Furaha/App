@@ -1,6 +1,7 @@
 import axios from 'axios';
 
-const API_URL = 'https://nine-c20e.onrender.com/api';
+// const API_URL = 'https://nine-c20e.onrender.com/api';
+const API_URL = 'http://127.0.0.1:5000/api'; // Local development URL
 
 const axiosInstance = axios.create({
   baseURL: API_URL,

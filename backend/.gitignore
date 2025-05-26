@@ -7,3 +7,23 @@
 #pycharm project files
 *.ipr
 #pycharm project files
+#pycache
+__pycache__/
+#python bytecode
+*.pyc
+#python bytecode
+*.pyo
+#python bytecode
+#python bytecode
+*.pyd
+#python bytecode
+#python egg files
+*.egg
+#python egg-info
+*.egg-info/
+#python distribution files
+dist/
+#python build files
+build/
+#python cache files
+__pycache__/    

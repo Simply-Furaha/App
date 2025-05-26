@@ -1,3 +1,4 @@
+// src/features/admin/adminService.js
 import axios from '../../utils/axiosConfig';
 
 // Get admin dashboard data
@@ -9,6 +10,18 @@ const getDashboard = async () => {
 // Get all users
 const getUsers = async () => {
   const response = await axios.get('/admin/users');
+  return response.data;
+};
+
+// Create a new user (admin only)
+const createUser = async (userData) => {
+  const response = await axios.post('/admin/users', userData);
+  return response.data;
+};
+
+// Delete user (admin only)
+const deleteUser = async (userId) => {
+  const response = await axios.delete(`/admin/users/${userId}`);
   return response.data;
 };
 
@@ -27,6 +40,24 @@ const getPendingLoans = async () => {
 // Approve loan
 const approveLoan = async (loanId) => {
   const response = await axios.put(`/admin/loans/${loanId}/approve`);
+  return response.data;
+};
+
+// Reject loan
+const rejectLoan = async (loanId) => {
+  const response = await axios.put(`/admin/loans/${loanId}/reject`);
+  return response.data;
+};
+
+// Add loan payment
+const addLoanPayment = async (loanId, paymentData) => {
+  const response = await axios.post(`/admin/loans/${loanId}/payment`, paymentData);
+  return response.data;
+};
+
+// Add user contribution
+const addContribution = async (contributionData) => {
+  const response = await axios.post('/admin/contributions', contributionData);
   return response.data;
 };
 
@@ -51,9 +82,14 @@ const updateInvestment = async (investmentId, investmentData) => {
 const adminService = {
   getDashboard,
   getUsers,
+  createUser,
+  deleteUser,
   getAllLoans,
   getPendingLoans,
   approveLoan,
+  rejectLoan,
+  addLoanPayment,
+  addContribution,
   getInvestments,
   createInvestment,
   updateInvestment
