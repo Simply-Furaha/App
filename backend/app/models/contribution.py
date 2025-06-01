@@ -1,3 +1,4 @@
+# app/models/contribution.py - Complete updated Contribution model
 from datetime import datetime
 from . import db
 
@@ -6,7 +7,7 @@ class Contribution(db.Model):
     __tablename__ = 'contributions'
     
     id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
     amount = db.Column(db.Float, nullable=False)
     month = db.Column(db.Date, nullable=False)
     payment_method = db.Column(db.String(20), default='mpesa')

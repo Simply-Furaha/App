@@ -84,38 +84,66 @@ def create_user():
         print(traceback.format_exc())
         return jsonify({"error": str(e)}), 500
 
+# Replace the delete_user function in app/routes/admin.py with this clean version
+
 @admin_bp.route('/users/<int:user_id>', methods=['DELETE'])
 @jwt_required()
 @admin_required
 def delete_user(user_id):
-    """Delete a user (admin only)"""
+    """Delete a user (admin only) - with cascade delete support"""
     try:
         current_user_id = get_jwt_identity()
         # Convert to integer if it's a string
         admin_id = int(current_user_id) if isinstance(current_user_id, str) else current_user_id
         
+        print(f"Admin {admin_id} attempting to delete user {user_id}")
+        
         # Get the user to delete
         user = User.query.get(user_id)
         if not user:
+            print(f"User {user_id} not found")
             return jsonify({"error": "User not found"}), 404
             
         # Prevent self-deletion
         if user_id == admin_id:
+            print(f"Admin {admin_id} tried to delete themselves")
             return jsonify({"error": "Cannot delete your own account"}), 400
-            
-        # Delete the user
+        
+        username = user.username  # Store username before deletion
+        user_stats = {
+            'contributions': user.contributions.count(),
+            'loans': user.loans.count(),
+            'otps': user.otps.count()
+        }
+        
+        print(f"Deleting user: {username}")
+        print(f"User has {user_stats['contributions']} contributions, {user_stats['loans']} loans, {user_stats['otps']} OTPs")
+        
+        # Delete the user - cascade will automatically handle all related records
         db.session.delete(user)
         db.session.commit()
         
+        print(f"✓ Successfully deleted user {username} and all related records")
+        
         return jsonify({
-            "message": f"User {user.username} deleted successfully"
+            "message": f"User {username} deleted successfully along with all related data",
+            "deleted_records": user_stats
         }), 200
+            
     except Exception as e:
         db.session.rollback()
         import traceback
-        print(f"Error deleting user: {str(e)}")
+        error_msg = str(e)
+        print(f"Error deleting user: {error_msg}")
         print(traceback.format_exc())
-        return jsonify({"error": str(e)}), 500
+        
+        # Provide more specific error messages
+        if "FOREIGN KEY constraint failed" in error_msg:
+            return jsonify({
+                "error": "Cannot delete user due to foreign key constraints. Please run the cascade delete migration."
+            }), 500
+        else:
+            return jsonify({"error": f"Failed to delete user: {error_msg}"}), 500
 
 @admin_bp.route('/contributions', methods=['POST'])
 @jwt_required()
@@ -241,11 +269,13 @@ def add_loan_payment(loan_id):
         print(traceback.format_exc())
         return jsonify({"error": str(e)}), 500
 
+# Replace the get_all_loans function in app/routes/admin.py
+
 @admin_bp.route('/loans', methods=['GET'])
 @jwt_required()
 @admin_required
 def get_all_loans():
-    """Get all loans (admin only)"""
+    """Get all loans with user details (admin only)"""
     try:
         current_user_id = get_jwt_identity()
         # Convert to integer if it's a string
@@ -253,8 +283,26 @@ def get_all_loans():
         
         loans = Loan.query.all()
         
+        # Include user details with each loan
+        loans_with_users = []
+        for loan in loans:
+            loan_dict = loan.to_dict()
+            user = User.query.get(loan.user_id)
+            if user:  # Check if user exists
+                loan_dict['user'] = {
+                    'id': user.id,
+                    'username': user.username,
+                    'first_name': user.first_name,
+                    'last_name': user.last_name,
+                    'email': user.email,
+                    'phone_number': user.phone_number
+                }
+            else:
+                loan_dict['user'] = None
+            loans_with_users.append(loan_dict)
+        
         return jsonify({
-            "loans": [loan.to_dict() for loan in loans]
+            "loans": loans_with_users
         }), 200
     except Exception as e:
         import traceback
@@ -355,13 +403,29 @@ def create_investment():
         if amount <= 0:
             return jsonify({"error": "Amount must be greater than zero"}), 400
         
+        # Parse expected_return_date if provided
+        expected_return_date = None
+        if data.get('expected_return_date'):
+            try:
+                expected_return_date = datetime.fromisoformat(data['expected_return_date'])
+            except ValueError:
+                return jsonify({"error": "Invalid expected return date format. Use YYYY-MM-DD"}), 400
+        
+        # Parse expected_return if provided
+        expected_return = None
+        if data.get('expected_return'):
+            try:
+                expected_return = float(data['expected_return'])
+            except ValueError:
+                return jsonify({"error": "Expected return must be a number"}), 400
+        
         # Create new investment
         investment = ExternalInvestment(
             amount=amount,
             description=data['description'],
             admin_id=admin_id,
-            expected_return=data.get('expected_return'),
-            expected_return_date=data.get('expected_return_date')
+            expected_return=expected_return,
+            expected_return_date=expected_return_date
         )
         
         db.session.add(investment)
@@ -417,10 +481,19 @@ def update_investment(investment_id):
         # Update fields if provided
         if data.get('description'):
             investment.description = data['description']
+            
         if data.get('expected_return'):
-            investment.expected_return = float(data['expected_return'])
+            try:
+                investment.expected_return = float(data['expected_return'])
+            except ValueError:
+                return jsonify({"error": "Expected return must be a number"}), 400
+                
         if data.get('expected_return_date'):
-            investment.expected_return_date = data['expected_return_date']
+            try:
+                investment.expected_return_date = datetime.fromisoformat(data['expected_return_date'])
+            except ValueError:
+                return jsonify({"error": "Invalid expected return date format. Use YYYY-MM-DD"}), 400
+                
         if data.get('status'):
             if data['status'] in ['active', 'completed', 'cancelled']:
                 investment.status = data['status']
@@ -440,6 +513,8 @@ def update_investment(investment_id):
         print(traceback.format_exc())
         return jsonify({"error": str(e)}), 500
 
+# Replace the get_admin_dashboard function in app/routes/admin.py
+
 @admin_bp.route('/dashboard', methods=['GET'])
 @jwt_required()
 @admin_required
@@ -450,9 +525,68 @@ def get_admin_dashboard():
         # Convert to integer if it's a string
         user_id = int(current_user_id) if isinstance(current_user_id, str) else current_user_id
         
+        print("🔢 Calculating admin dashboard data...")
+        
         # User statistics
         total_users = User.query.count()
         active_users = User.query.filter_by(is_verified=True).count()
+        print(f"Users: {total_users} total, {active_users} active")
+        
+        # Calculate total account balance - FIXED CALCULATION
+        print("💰 Calculating total account balance...")
+        
+        # Method 1: Get all contributions
+        all_contributions = Contribution.query.all()
+        total_contributions = sum(contribution.amount for contribution in all_contributions)
+        print(f"Total contributions: {total_contributions}")
+        
+        # Method 2: Get all loan repayments (paid amounts)
+        all_loans = Loan.query.all()
+        total_loan_repayments = 0
+        total_interest_earned = 0
+        
+        for loan in all_loans:
+            if loan.paid_amount and loan.paid_amount > 0:
+                total_loan_repayments += loan.paid_amount
+                print(f"Loan {loan.id}: paid_amount = {loan.paid_amount}")
+                
+                # Calculate interest portion of payments
+                if loan.amount_due and loan.amount and loan.amount_due > loan.amount:
+                    total_interest_for_loan = loan.amount_due - loan.amount
+                    if loan.amount_due > 0:
+                        payment_ratio = loan.paid_amount / loan.amount_due
+                        interest_earned_from_loan = total_interest_for_loan * payment_ratio
+                        total_interest_earned += interest_earned_from_loan
+                        print(f"Interest from loan {loan.id}: {interest_earned_from_loan}")
+        
+        print(f"Total loan repayments: {total_loan_repayments}")
+        print(f"Total interest earned: {total_interest_earned}")
+        
+        # Total account balance = all money that came into the system
+        total_account_balance = total_contributions + total_loan_repayments
+        print(f"CALCULATED TOTAL ACCOUNT BALANCE: {total_account_balance}")
+        
+        # Alternative calculation method for verification
+        print("🔍 Alternative calculation for verification...")
+        
+        # Sum all contributions using raw SQL for verification
+        try:
+            with db.engine.connect() as conn:
+                result = conn.execute(text('SELECT COALESCE(SUM(amount), 0) FROM contributions'))
+                contrib_sum = result.fetchone()[0]
+                print(f"Contributions (SQL): {contrib_sum}")
+                
+                result = conn.execute(text('SELECT COALESCE(SUM(paid_amount), 0) FROM loans WHERE paid_amount > 0'))
+                repayment_sum = result.fetchone()[0]
+                print(f"Loan repayments (SQL): {repayment_sum}")
+                
+                # Use SQL calculation if SQLAlchemy calculation failed
+                if total_account_balance == 0 and (contrib_sum > 0 or repayment_sum > 0):
+                    total_account_balance = contrib_sum + repayment_sum
+                    print(f"Using SQL calculation: {total_account_balance}")
+                    
+        except Exception as sql_error:
+            print(f"SQL verification failed: {str(sql_error)}")
         
         # Loan statistics
         total_loans = Loan.query.count()
@@ -460,14 +594,18 @@ def get_admin_dashboard():
         approved_loans = Loan.query.filter_by(status='approved').count()
         paid_loans = Loan.query.filter_by(status='paid').count()
         
-        # Calculate total loan amount
-        total_loan_amount = sum(loan.amount for loan in Loan.query.filter_by(status='approved').all())
+        # Calculate total loan amount (approved loans only)
+        approved_loans_list = Loan.query.filter_by(status='approved').all()
+        total_loan_amount = sum(loan.amount for loan in approved_loans_list)
+        print(f"Total loan amount (approved): {total_loan_amount}")
         
         # Investment statistics
         investments = ExternalInvestment.query.all()
-        total_investment = sum(inv.amount for inv in investments)
-        active_investments = sum(inv.amount for inv in investments if inv.status == 'active')
-        completed_investments = sum(inv.amount for inv in investments if inv.status == 'completed')
+        total_investment = sum(inv.amount for inv in investments) if investments else 0
+        active_investments = sum(inv.amount for inv in investments if inv.status == 'active') if investments else 0
+        completed_investments = sum(inv.amount for inv in investments if inv.status == 'completed') if investments else 0
+        
+        print(f"Investments: total={total_investment}, active={active_investments}, completed={completed_investments}")
         
         # Get recent pending loans for approval
         recent_pending_loans = Loan.query.filter_by(status='pending').order_by(Loan.created_at.desc()).limit(5).all()
@@ -475,16 +613,18 @@ def get_admin_dashboard():
         
         for loan in recent_pending_loans:
             user = User.query.get(loan.user_id)
-            loan_dict = loan.to_dict()
-            loan_dict['user'] = {
-                'id': user.id,
-                'username': user.username,
-                'first_name': user.first_name,
-                'last_name': user.last_name
-            }
-            pending_loans_data.append(loan_dict)
+            if user:  # Check if user exists
+                loan_dict = loan.to_dict()
+                loan_dict['user'] = {
+                    'id': user.id,
+                    'username': user.username,
+                    'first_name': user.first_name,
+                    'last_name': user.last_name
+                }
+                pending_loans_data.append(loan_dict)
         
-        return jsonify({
+        # Prepare response data
+        response_data = {
             "users": {
                 "total": total_users,
                 "active": active_users
@@ -501,15 +641,24 @@ def get_admin_dashboard():
                 "total": total_investment,
                 "active": active_investments,
                 "completed": completed_investments
+            },
+            "total_account_balance": total_account_balance,
+            "financial_breakdown": {
+                "total_contributions": total_contributions,
+                "total_loan_repayments": total_loan_repayments,
+                "total_interest_earned": total_interest_earned
             }
-        }), 200
+        }
+        
+        print(f"📊 Final response - Total Account Balance: {total_account_balance}")
+        
+        return jsonify(response_data), 200
+        
     except Exception as e:
         import traceback
         print(f"Error getting admin dashboard: {str(e)}")
         print(traceback.format_exc())
         return jsonify({"error": str(e)}), 500
-    
-# app/routes/admin.py (add this new route)
 
 @admin_bp.route('/loans/<int:loan_id>/reject', methods=['PUT'])
 @jwt_required()
@@ -540,5 +689,52 @@ def reject_loan(loan_id):
         db.session.rollback()
         import traceback
         print(f"Error rejecting loan: {str(e)}")
+        print(traceback.format_exc())
+        return jsonify({"error": str(e)}), 500
+
+# Add this suspend route to your app/routes/admin.py
+
+@admin_bp.route('/users/<int:user_id>/suspend', methods=['PUT'])
+@jwt_required()
+@admin_required
+def suspend_user(user_id):
+    """Suspend or unsuspend a user (admin only)"""
+    try:
+        data = request.get_json()
+        current_user_id = get_jwt_identity()
+        # Convert to integer if it's a string
+        admin_id = int(current_user_id) if isinstance(current_user_id, str) else current_user_id
+        
+        print(f"Admin {admin_id} attempting to suspend/unsuspend user {user_id}")
+        
+        # Get the user to suspend/unsuspend
+        user = User.query.get(user_id)
+        if not user:
+            print(f"User {user_id} not found")
+            return jsonify({"error": "User not found"}), 404
+            
+        # Prevent self-suspension
+        if user_id == admin_id:
+            print(f"Admin {admin_id} tried to suspend themselves")
+            return jsonify({"error": "Cannot suspend your own account"}), 400
+            
+        # Get suspend status from request data
+        suspend = data.get('suspend', False)
+        
+        # Update user suspension status
+        user.is_suspended = suspend
+        db.session.commit()
+        
+        action = "suspended" if suspend else "unsuspended"
+        print(f"✓ User {user.username} {action} by admin {admin_id}")
+        
+        return jsonify({
+            "message": f"User {user.username} {action} successfully",
+            "user": user.to_dict()
+        }), 200
+    except Exception as e:
+        db.session.rollback()
+        import traceback
+        print(f"Error suspending/unsuspending user: {str(e)}")
         print(traceback.format_exc())
         return jsonify({"error": str(e)}), 500

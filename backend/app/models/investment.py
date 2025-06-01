@@ -1,3 +1,4 @@
+# app/models/investment.py - Complete updated Investment model
 from datetime import datetime
 from . import db
 
@@ -12,7 +13,7 @@ class ExternalInvestment(db.Model):
     expected_return = db.Column(db.Float, nullable=True)
     expected_return_date = db.Column(db.DateTime, nullable=True)
     status = db.Column(db.String(20), default='active')  # active, completed, cancelled
-    admin_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    admin_id = db.Column(db.Integer, db.ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     

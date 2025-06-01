@@ -25,6 +25,12 @@ const deleteUser = async (userId) => {
   return response.data;
 };
 
+// Suspend/Unsuspend user (admin only)
+const suspendUser = async (userId, suspendData) => {
+  const response = await axios.put(`/admin/users/${userId}/suspend`, suspendData);
+  return response.data;
+};
+
 // Get all loans
 const getAllLoans = async () => {
   const response = await axios.get('/admin/loans');
@@ -84,6 +90,7 @@ const adminService = {
   getUsers,
   createUser,
   deleteUser,
+  suspendUser,
   getAllLoans,
   getPendingLoans,
   approveLoan,

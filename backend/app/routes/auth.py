@@ -83,6 +83,56 @@ def register():
         print(traceback.format_exc())
         return jsonify({"error": str(e)}), 500
 
+# Replace the login and verify_otp functions in app/routes/auth.py
+
+@auth_bp.route('/login', methods=['POST'])
+def login():
+    """Login user and generate OTP for verification"""
+    try:
+        data = request.get_json()
+        print(f"Login attempt for user: {data.get('username')}")
+        
+        if not all([data.get('username'), data.get('password')]):
+            return jsonify({"error": "Username and password are required"}), 400
+        
+        # Find user by username
+        user = User.query.filter_by(username=data['username']).first()
+        
+        # Check if user exists and password is correct
+        if not user or not user.verify_password(data['password']):
+            print(f"Invalid credentials for user: {data.get('username')}")
+            return jsonify({"error": "Invalid username or password"}), 401
+        
+        # Check if user is suspended - BLOCK SUSPENDED USERS
+        if getattr(user, 'is_suspended', False):
+            print(f"Suspended user tried to login: {user.username}")
+            return jsonify({
+                "error": "Account suspended. Please contact administrator at support@ninefund.com or call +254-XXX-XXXX for assistance."
+            }), 403
+        
+        # Generate and send OTP for non-suspended users
+        otp = OTP.generate_otp(user.id)
+        
+        # For development, print OTP instead of sending email
+        print(f"DEBUG - OTP for {user.username}: {otp.code}")
+        
+        # Try to send email, but don't fail if it doesn't work
+        try:
+            send_otp_email(user, otp.code)
+        except Exception as e:
+            print(f"Email sending failed: {str(e)}")
+            # Continue without failing the login process
+        
+        return jsonify({
+            "message": "Login credentials valid. Check your email for verification code.",
+            "user_id": user.id
+        }), 200
+    except Exception as e:
+        import traceback
+        print(f"Login error: {str(e)}")
+        print(traceback.format_exc())
+        return jsonify({"error": str(e)}), 500
+
 @auth_bp.route('/verify-otp', methods=['POST'])
 def verify_otp():
     """Verify OTP code sent to user's email"""
@@ -97,6 +147,13 @@ def verify_otp():
         if not user:
             print(f"User with ID {data.get('user_id')} not found")
             return jsonify({"error": "User not found"}), 404
+        
+        # Double-check suspension status at OTP verification
+        if getattr(user, 'is_suspended', False):
+            print(f"Suspended user tried to verify OTP: {user.username}")
+            return jsonify({
+                "error": "Account suspended. Please contact administrator at support@ninefund.com or call +254-XXX-XXXX for assistance."
+            }), 403
         
         # Get the latest unused OTP for this user
         otp = OTP.query.filter_by(
@@ -120,12 +177,11 @@ def verify_otp():
         user.is_verified = True
         db.session.commit()
         
-        # Generate tokens - FIXED: Convert user.id to string
+        # Generate tokens - Convert user.id to string
         access_token = create_access_token(identity=str(user.id))
         refresh_token = create_refresh_token(identity=str(user.id))
         
         print(f"OTP verified successfully for user: {user.username}")
-        print(f"Created token with identity type: {type(str(user.id))}")
         
         return jsonify({
             "message": "Account verified successfully",
@@ -140,40 +196,7 @@ def verify_otp():
         print(traceback.format_exc())
         return jsonify({"error": str(e)}), 500
 
-@auth_bp.route('/login', methods=['POST'])
-def login():
-    """Login user and generate OTP for verification"""
-    try:
-        data = request.get_json()
-        print(f"Login attempt for user: {data.get('username')}")
-        
-        if not all([data.get('username'), data.get('password')]):
-            return jsonify({"error": "Username and password are required"}), 400
-        
-        # Find user by username
-        user = User.query.filter_by(username=data['username']).first()
-        
-        # Check if user exists and password is correct
-        if not user or not user.verify_password(data['password']):
-            print(f"Invalid credentials for user: {data.get('username')}")
-            return jsonify({"error": "Invalid username or password"}), 401
-        
-        # Generate and send OTP
-        otp = OTP.generate_otp(user.id)
-        send_otp_email(user, otp.code)
-        
-        # Print OTP for development purposes
-        print(f"DEBUG - OTP for {user.username}: {otp.code}")
-        
-        return jsonify({
-            "message": "Login credentials valid. Check your email for verification code.",
-            "user_id": user.id
-        }), 200
-    except Exception as e:
-        import traceback
-        print(f"Login error: {str(e)}")
-        print(traceback.format_exc())
-        return jsonify({"error": str(e)}), 500
+
 
 @auth_bp.route('/refresh', methods=['POST'])
 @jwt_required(refresh=True)

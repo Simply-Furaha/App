@@ -93,11 +93,12 @@ def seed_database():
         ),
         User(
             username="florence",
-            email="florence@example.com",
+            email="fachieng387@gmail.com",
             password="password123",
             first_name="Florence",
             last_name="Taylor",
-            phone_number="+254701000005",
+            phone_number="+254715780784",
+            is_admin=True,
             is_verified=True
         ),
         User(
@@ -111,11 +112,11 @@ def seed_database():
         ),
         User(
             username="byron",
-            email="wellfuraha@gmail.com",
-            password="password123",
+            email="byron.ochola@gmail.com",
+            password="admin123",
             first_name="Byron",
-            last_name="Miller",
-            phone_number="+254701000007",
+            last_name="Ochola",
+            phone_number="+254723165673",
             is_admin=True,
             is_verified=True
         ),
@@ -130,11 +131,12 @@ def seed_database():
         ),
         User(
             username="jill",
-            email="jill@example.com",
-            password="password123",
+            email="jillbach001@gmail.com",
+            password="admin123",
             first_name="Jill",
             last_name="Moore",
-            phone_number="+254701000009",
+            phone_number="+254720167887",
+            is_admin=True,
             is_verified=True
         )
     ]

@@ -1,4 +1,4 @@
-# app/models/user.py
+# app/models/user.py - Complete updated User model
 from datetime import datetime
 from werkzeug.security import generate_password_hash, check_password_hash
 from . import db
@@ -17,13 +17,32 @@ class User(db.Model):
     phone_number = db.Column(db.String(15), nullable=False)
     is_admin = db.Column(db.Boolean, default=False)
     is_verified = db.Column(db.Boolean, default=False)
+    is_suspended = db.Column(db.Boolean, default=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
-    # Relationships
-    contributions = db.relationship('Contribution', back_populates='user', lazy='dynamic')
-    loans = db.relationship('Loan', back_populates='user', lazy='dynamic')
-    otps = db.relationship('OTP', back_populates='user', lazy='dynamic')
+    # Enhanced relationships with cascade delete
+    contributions = db.relationship(
+        'Contribution', 
+        back_populates='user', 
+        lazy='dynamic', 
+        cascade='all, delete-orphan',
+        passive_deletes=True
+    )
+    loans = db.relationship(
+        'Loan', 
+        back_populates='user', 
+        lazy='dynamic', 
+        cascade='all, delete-orphan',
+        passive_deletes=True
+    )
+    otps = db.relationship(
+        'OTP', 
+        back_populates='user', 
+        lazy='dynamic', 
+        cascade='all, delete-orphan',
+        passive_deletes=True
+    )
     
     @property
     def password(self):
@@ -71,6 +90,7 @@ class User(db.Model):
             'phone_number': self.phone_number,
             'is_admin': self.is_admin,
             'is_verified': self.is_verified,
+            'is_suspended': self.is_suspended,
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'total_contribution': self.total_contribution(),
             'loan_limit': self.loan_limit(),

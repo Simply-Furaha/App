@@ -1,3 +1,4 @@
+# app/models/loan.py - Complete updated Loan model
 from datetime import datetime, timedelta
 from . import db
 
@@ -6,7 +7,7 @@ class Loan(db.Model):
     __tablename__ = 'loans'
     
     id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
     amount = db.Column(db.Float, nullable=False)
     interest_rate = db.Column(db.Float, default=5.0)  # 5% default
     status = db.Column(db.String(20), default='pending')  # pending, approved, paid
@@ -19,9 +20,15 @@ class Loan(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
-    # Relationships
+    # Enhanced relationships with cascade delete
     user = db.relationship('User', back_populates='loans')
-    payments = db.relationship('LoanPayment', back_populates='loan', lazy='dynamic')
+    payments = db.relationship(
+        'LoanPayment', 
+        back_populates='loan', 
+        lazy='dynamic', 
+        cascade='all, delete-orphan',
+        passive_deletes=True
+    )
     
     def __init__(self, **kwargs):
         # Set default interest_rate if not provided
@@ -120,7 +127,7 @@ class LoanPayment(db.Model):
     __tablename__ = 'loan_payments'
     
     id = db.Column(db.Integer, primary_key=True)
-    loan_id = db.Column(db.Integer, db.ForeignKey('loans.id'), nullable=False)
+    loan_id = db.Column(db.Integer, db.ForeignKey('loans.id', ondelete='CASCADE'), nullable=False)
     amount = db.Column(db.Float, nullable=False)
     payment_date = db.Column(db.DateTime, default=datetime.utcnow)
     payment_method = db.Column(db.String(50), default='mpesa')

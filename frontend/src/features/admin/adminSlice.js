@@ -66,6 +66,19 @@ export const deleteUser = createAsyncThunk(
   }
 );
 
+// Suspend/Unsuspend user
+export const suspendUser = createAsyncThunk(
+  'admin/suspendUser',
+  async ({ userId, suspend }, thunkAPI) => {
+    try {
+      return await adminService.suspendUser(userId, { suspend });
+    } catch (error) {
+      const message = error.response?.data?.error || 'Failed to update user status';
+      return thunkAPI.rejectWithValue(message);
+    }
+  }
+);
+
 // Get all loans
 export const getAllLoans = createAsyncThunk(
   'admin/getAllLoans',
@@ -211,6 +224,7 @@ const adminSlice = createSlice({
         state.isError = true;
         state.message = action.payload;
       })
+      
       // Get users
       .addCase(getUsers.pending, (state) => {
         state.isLoading = true;
@@ -225,6 +239,7 @@ const adminSlice = createSlice({
         state.isError = true;
         state.message = action.payload;
       })
+      
       // Create user
       .addCase(createUser.pending, (state) => {
         state.isLoading = true;
@@ -240,6 +255,7 @@ const adminSlice = createSlice({
         state.isError = true;
         state.message = action.payload;
       })
+      
       // Delete user
       .addCase(deleteUser.pending, (state) => {
         state.isLoading = true;
@@ -255,6 +271,26 @@ const adminSlice = createSlice({
         state.isError = true;
         state.message = action.payload;
       })
+      
+      // Suspend user
+      .addCase(suspendUser.pending, (state) => {
+        state.isLoading = true;
+      })
+      .addCase(suspendUser.fulfilled, (state, action) => {
+        state.isLoading = false;
+        state.isSuccess = true;
+        state.message = action.payload.message;
+        // Update the user in the users array
+        state.users = state.users.map(user => 
+          user.id === action.payload.user.id ? action.payload.user : user
+        );
+      })
+      .addCase(suspendUser.rejected, (state, action) => {
+        state.isLoading = false;
+        state.isError = true;
+        state.message = action.payload;
+      })
+      
       // Get all loans
       .addCase(getAllLoans.pending, (state) => {
         state.isLoading = true;
@@ -269,6 +305,7 @@ const adminSlice = createSlice({
         state.isError = true;
         state.message = action.payload;
       })
+      
       // Get pending loans
       .addCase(getPendingLoans.pending, (state) => {
         state.isLoading = true;
@@ -283,6 +320,7 @@ const adminSlice = createSlice({
         state.isError = true;
         state.message = action.payload;
       })
+      
       // Approve loan
       .addCase(approveLoan.pending, (state) => {
         state.isLoading = true;
@@ -311,6 +349,7 @@ const adminSlice = createSlice({
         state.isError = true;
         state.message = action.payload;
       })
+      
       // Reject loan
       .addCase(rejectLoan.pending, (state) => {
         state.isLoading = true;
@@ -339,6 +378,7 @@ const adminSlice = createSlice({
         state.isError = true;
         state.message = action.payload;
       })
+      
       // Add loan payment
       .addCase(addLoanPayment.pending, (state) => {
         state.isLoading = true;
@@ -360,6 +400,7 @@ const adminSlice = createSlice({
         state.isError = true;
         state.message = action.payload;
       })
+      
       // Add contribution
       .addCase(addContribution.pending, (state) => {
         state.isLoading = true;
@@ -374,6 +415,7 @@ const adminSlice = createSlice({
         state.isError = true;
         state.message = action.payload;
       })
+      
       // Get investments
       .addCase(getInvestments.pending, (state) => {
         state.isLoading = true;
@@ -388,6 +430,7 @@ const adminSlice = createSlice({
         state.isError = true;
         state.message = action.payload;
       })
+      
       // Create investment
       .addCase(createInvestment.pending, (state) => {
         state.isLoading = true;
@@ -407,6 +450,7 @@ const adminSlice = createSlice({
         state.isError = true;
         state.message = action.payload;
       })
+      
       // Update investment
       .addCase(updateInvestment.pending, (state) => {
         state.isLoading = true;

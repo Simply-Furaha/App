@@ -1,11 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
-import { useParams, Link, useNavigate } from 'react-router-dom';
-import { getLoanDetails, repayLoan, reset } from '../features/loans/loansSlice';
+import { useParams, Link } from 'react-router-dom';
+import { getLoanDetails, repayLoanMpesa, reset, resetMpesa, checkLoanPaymentStatus } from '../features/loans/loansSlice';
 import Card from '../components/common/Card';
 import Button from '../components/common/Button';
 import Alert from '../components/common/Alert';
-import Input from '../components/common/Input';
 import Modal from '../components/common/Modal';
 import DataTable from '../components/common/DataTable';
 import { formatCurrency, formatDate, formatDateTime, formatLoanStatus } from '../utils/formatters';
@@ -13,43 +12,82 @@ import { formatCurrency, formatDate, formatDateTime, formatLoanStatus } from '..
 const LoanDetails = () => {
   const [showRepayModal, setShowRepayModal] = useState(false);
   const [repayAmount, setRepayAmount] = useState('');
+  const [phoneNumber, setPhoneNumber] = useState('');
   const [showAlert, setShowAlert] = useState(false);
+  const [paymentInProgress, setPaymentInProgress] = useState(false);
   
   const { loanId } = useParams();
   const dispatch = useDispatch();
-  const navigate = useNavigate();
   
-  const { loan, payments, isLoading, isSuccess, isError, message } = useSelector((state) => state.loans);
+  const { 
+    loan, 
+    payments, 
+    isLoading, 
+    mpesaLoading, 
+    mpesaSuccess, 
+    mpesaError, 
+    mpesaMessage,
+    checkoutRequestId,
+    mpesaInstructions 
+  } = useSelector((state) => state.loans);
+  const { user } = useSelector((state) => state.auth);
   
   useEffect(() => {
     dispatch(getLoanDetails(loanId));
-    
-    return () => {
-      dispatch(reset());
-    };
+    return () => dispatch(reset());
   }, [dispatch, loanId]);
   
   useEffect(() => {
-    if (isError) {
+    if (mpesaError || mpesaSuccess) {
       setShowAlert(true);
+      setPaymentInProgress(false);
     }
-  }, [isError]);
+    
+    // Auto-check payment status
+    if (checkoutRequestId && !mpesaSuccess && !mpesaError) {
+      setPaymentInProgress(true);
+      const interval = setInterval(() => {
+        dispatch(checkLoanPaymentStatus(checkoutRequestId));
+      }, 5000);
+      
+      setTimeout(() => clearInterval(interval), 120000);
+      return () => clearInterval(interval);
+    }
+  }, [mpesaError, mpesaSuccess, checkoutRequestId, dispatch]);
   
   const handleOpenRepayModal = () => {
     setRepayAmount(loan?.unpaid_balance || '');
+    setPhoneNumber(user?.phone_number || '');
     setShowRepayModal(true);
   };
   
   const handleRepayment = () => {
     const amount = parseFloat(repayAmount);
+    const formattedPhone = formatPhone(phoneNumber);
     
     if (amount > 0 && amount <= loan?.unpaid_balance) {
-      dispatch(repayLoan({
+      dispatch(resetMpesa());
+      dispatch(repayLoanMpesa({
         loan_id: loan.id,
-        amount
+        amount,
+        phone_number: formattedPhone
       }));
       setShowRepayModal(false);
     }
+  };
+  
+  const formatPhone = (phone) => {
+    let formatted = phone.replace(/\s+/g, '');
+    if (formatted.startsWith('0')) {
+      formatted = '254' + formatted.substring(1);
+    }
+    if (formatted.startsWith('+')) {
+      formatted = formatted.substring(1);
+    }
+    if (!formatted.startsWith('254')) {
+      formatted = '254' + formatted;
+    }
+    return formatted;
   };
   
   const paymentColumns = [
@@ -90,13 +128,33 @@ const LoanDetails = () => {
   
   return (
     <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-      {showAlert && isError && (
+      {showAlert && (mpesaError || mpesaSuccess) && (
         <Alert
-          type="error"
-          message={message}
+          type={mpesaError ? 'error' : 'success'}
+          message={mpesaMessage}
           onClose={() => setShowAlert(false)}
           autoClose={true}
         />
+      )}
+      
+      {paymentInProgress && (
+        <div className="mb-4 p-4 bg-blue-50 rounded-lg">
+          <div className="flex items-center">
+            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600 mr-2"></div>
+            <span className="text-blue-700">Processing M-PESA repayment...</span>
+          </div>
+        </div>
+      )}
+      
+      {mpesaInstructions.length > 0 && (
+        <div className="mb-4 p-4 bg-green-50 rounded-lg">
+          <h4 className="font-medium text-green-800 mb-2">Payment Instructions:</h4>
+          <ul className="text-sm text-green-700 space-y-1">
+            {mpesaInstructions.map((instruction, index) => (
+              <li key={index}>• {instruction}</li>
+            ))}
+          </ul>
+        </div>
       )}
       
       <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-8">
@@ -108,14 +166,16 @@ const LoanDetails = () => {
         </div>
         <div className="mt-4 md:mt-0 flex space-x-4">
           <Link to="/loans">
-            <Button variant="secondary">
-              Back to Loans
-            </Button>
+            <Button variant="secondary">Back to Loans</Button>
           </Link>
           
           {loan.status === 'approved' && loan.unpaid_balance > 0 && (
-            <Button variant="primary" onClick={handleOpenRepayModal}>
-              Make Payment
+            <Button 
+              variant="primary" 
+              onClick={handleOpenRepayModal}
+              disabled={mpesaLoading || paymentInProgress}
+            >
+              {mpesaLoading ? 'Processing...' : 'Repay via M-PESA'}
             </Button>
           )}
         </div>
@@ -146,32 +206,6 @@ const LoanDetails = () => {
             <div>
               <p className="text-sm text-gray-600">Total Amount Due</p>
               <p className="text-lg font-semibold">{formatCurrency(loan.amount_due)}</p>
-            </div>
-            
-            <div>
-              <p className="text-sm text-gray-600">Borrowed Date</p>
-              <p className="text-lg font-semibold">
-                {loan.borrowed_date ? formatDate(loan.borrowed_date) : 'Pending approval'}
-              </p>
-            </div>
-            
-            <div>
-              <p className="text-sm text-gray-600">Due Date</p>
-              <p className="text-lg font-semibold">
-                {loan.due_date ? formatDate(loan.due_date) : '-'}
-              </p>
-            </div>
-            
-            <div>
-              <p className="text-sm text-gray-600">Days Remaining</p>
-              <p className="text-lg font-semibold">
-                {loan.days_remaining > 0 ? `${loan.days_remaining} days` : 'Overdue'}
-              </p>
-            </div>
-            
-            <div>
-              <p className="text-sm text-gray-600">Paid Amount</p>
-              <p className="text-lg font-semibold">{formatCurrency(loan.paid_amount)}</p>
             </div>
             
             <div>
@@ -207,10 +241,10 @@ const LoanDetails = () => {
         </Card>
       )}
       
-      {/* Repayment Modal */}
+      {/* M-PESA Repayment Modal */}
       <Modal
         isOpen={showRepayModal}
-        title="Make Loan Payment"
+        title="Repay Loan via M-PESA"
         onClose={() => setShowRepayModal(false)}
       >
         <div className="p-6">
@@ -219,7 +253,7 @@ const LoanDetails = () => {
             <p className="text-xl font-semibold">{formatCurrency(loan.unpaid_balance)}</p>
           </div>
           
-          <div className="mb-6">
+          <div className="mb-4">
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Payment Amount (KES)
             </label>
@@ -232,25 +266,25 @@ const LoanDetails = () => {
               className="w-full px-3 py-2 border rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 border-gray-300"
               placeholder="Enter payment amount"
             />
-            <p className="mt-1 text-sm text-gray-500">
-              You can pay any amount up to the full outstanding balance.
-            </p>
+          </div>
+          
+          <div className="mb-6">
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              M-PESA Phone Number
+            </label>
+            <input
+              type="text"
+              value={phoneNumber}
+              onChange={(e) => setPhoneNumber(e.target.value)}
+              className="w-full px-3 py-2 border rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 border-gray-300"
+              placeholder="0712345678"
+            />
           </div>
           
           <div className="bg-yellow-50 p-4 mb-6 rounded-md">
-            <div className="flex">
-              <div className="flex-shrink-0">
-                <svg className="h-5 w-5 text-yellow-400" viewBox="0 0 20 20" fill="currentColor">
-                  <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
-                </svg>
-              </div>
-              <div className="ml-3">
-                <h3 className="text-sm font-medium text-yellow-800">Payment Notice</h3>
-                <div className="mt-1 text-sm text-yellow-700">
-                  <p>This will initiate an M-PESA payment request to your registered phone number. You will need to confirm the payment using your M-PESA PIN.</p>
-                </div>
-              </div>
-            </div>
+            <p className="text-sm text-yellow-700">
+              💡 You'll receive an M-PESA payment request on your phone. Enter your PIN to complete the repayment.
+            </p>
           </div>
           
           <div className="flex justify-end space-x-4">
@@ -263,9 +297,9 @@ const LoanDetails = () => {
             <Button
               variant="primary"
               onClick={handleRepayment}
-              disabled={!repayAmount || parseFloat(repayAmount) <= 0 || parseFloat(repayAmount) > loan.unpaid_balance}
+              disabled={!repayAmount || parseFloat(repayAmount) <= 0 || parseFloat(repayAmount) > loan.unpaid_balance || !phoneNumber}
             >
-              Proceed to Pay
+              Send M-PESA Request
             </Button>
           </div>
         </div>
