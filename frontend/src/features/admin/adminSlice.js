@@ -1,4 +1,4 @@
-// src/features/admin/adminSlice.js
+// src/features/admin/adminSlice.js - Enhanced with new features
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
 import adminService from './adminService';
 
@@ -8,20 +8,25 @@ const initialState = {
   loans: [],
   pendingLoans: [],
   investments: [],
+  activityLogs: [],
+  overpayments: [],
+  pagination: null,
   isLoading: false,
   isSuccess: false,
   isError: false,
   message: ''
 };
 
-// Get admin dashboard data
+// ============= EXISTING THUNKS =============
+
+// Get admin dashboard
 export const getDashboard = createAsyncThunk(
   'admin/getDashboard',
   async (_, thunkAPI) => {
     try {
       return await adminService.getDashboard();
     } catch (error) {
-      const message = error.response?.data?.error || 'Failed to get dashboard data';
+      const message = error.response?.data?.error || error.message || error.toString();
       return thunkAPI.rejectWithValue(message);
     }
   }
@@ -34,20 +39,20 @@ export const getUsers = createAsyncThunk(
     try {
       return await adminService.getUsers();
     } catch (error) {
-      const message = error.response?.data?.error || 'Failed to get users';
+      const message = error.response?.data?.error || error.message || error.toString();
       return thunkAPI.rejectWithValue(message);
     }
   }
 );
 
-// Create a new user
+// Create user
 export const createUser = createAsyncThunk(
   'admin/createUser',
   async (userData, thunkAPI) => {
     try {
       return await adminService.createUser(userData);
     } catch (error) {
-      const message = error.response?.data?.error || 'Failed to create user';
+      const message = error.response?.data?.error || error.message || error.toString();
       return thunkAPI.rejectWithValue(message);
     }
   }
@@ -60,20 +65,20 @@ export const deleteUser = createAsyncThunk(
     try {
       return await adminService.deleteUser(userId);
     } catch (error) {
-      const message = error.response?.data?.error || 'Failed to delete user';
+      const message = error.response?.data?.error || error.message || error.toString();
       return thunkAPI.rejectWithValue(message);
     }
   }
 );
 
-// Suspend/Unsuspend user
+// Suspend user
 export const suspendUser = createAsyncThunk(
   'admin/suspendUser',
-  async ({ userId, suspend }, thunkAPI) => {
+  async ({ userId, suspendData }, thunkAPI) => {
     try {
-      return await adminService.suspendUser(userId, { suspend });
+      return await adminService.suspendUser(userId, suspendData);
     } catch (error) {
-      const message = error.response?.data?.error || 'Failed to update user status';
+      const message = error.response?.data?.error || error.message || error.toString();
       return thunkAPI.rejectWithValue(message);
     }
   }
@@ -86,7 +91,7 @@ export const getAllLoans = createAsyncThunk(
     try {
       return await adminService.getAllLoans();
     } catch (error) {
-      const message = error.response?.data?.error || 'Failed to get loans';
+      const message = error.response?.data?.error || error.message || error.toString();
       return thunkAPI.rejectWithValue(message);
     }
   }
@@ -99,7 +104,7 @@ export const getPendingLoans = createAsyncThunk(
     try {
       return await adminService.getPendingLoans();
     } catch (error) {
-      const message = error.response?.data?.error || 'Failed to get pending loans';
+      const message = error.response?.data?.error || error.message || error.toString();
       return thunkAPI.rejectWithValue(message);
     }
   }
@@ -112,7 +117,7 @@ export const approveLoan = createAsyncThunk(
     try {
       return await adminService.approveLoan(loanId);
     } catch (error) {
-      const message = error.response?.data?.error || 'Failed to approve loan';
+      const message = error.response?.data?.error || error.message || error.toString();
       return thunkAPI.rejectWithValue(message);
     }
   }
@@ -125,7 +130,7 @@ export const rejectLoan = createAsyncThunk(
     try {
       return await adminService.rejectLoan(loanId);
     } catch (error) {
-      const message = error.response?.data?.error || 'Failed to reject loan';
+      const message = error.response?.data?.error || error.message || error.toString();
       return thunkAPI.rejectWithValue(message);
     }
   }
@@ -138,33 +143,33 @@ export const addLoanPayment = createAsyncThunk(
     try {
       return await adminService.addLoanPayment(loanId, paymentData);
     } catch (error) {
-      const message = error.response?.data?.error || 'Failed to add loan payment';
+      const message = error.response?.data?.error || error.message || error.toString();
       return thunkAPI.rejectWithValue(message);
     }
   }
 );
 
-// Add user contribution
+// Add contribution
 export const addContribution = createAsyncThunk(
   'admin/addContribution',
   async (contributionData, thunkAPI) => {
     try {
       return await adminService.addContribution(contributionData);
     } catch (error) {
-      const message = error.response?.data?.error || 'Failed to add contribution';
+      const message = error.response?.data?.error || error.message || error.toString();
       return thunkAPI.rejectWithValue(message);
     }
   }
 );
 
-// Get all investments
+// Get investments
 export const getInvestments = createAsyncThunk(
   'admin/getInvestments',
   async (_, thunkAPI) => {
     try {
       return await adminService.getInvestments();
     } catch (error) {
-      const message = error.response?.data?.error || 'Failed to get investments';
+      const message = error.response?.data?.error || error.message || error.toString();
       return thunkAPI.rejectWithValue(message);
     }
   }
@@ -177,7 +182,7 @@ export const createInvestment = createAsyncThunk(
     try {
       return await adminService.createInvestment(investmentData);
     } catch (error) {
-      const message = error.response?.data?.error || 'Failed to create investment';
+      const message = error.response?.data?.error || error.message || error.toString();
       return thunkAPI.rejectWithValue(message);
     }
   }
@@ -186,17 +191,99 @@ export const createInvestment = createAsyncThunk(
 // Update investment
 export const updateInvestment = createAsyncThunk(
   'admin/updateInvestment',
-  async (data, thunkAPI) => {
+  async ({ investmentId, investmentData }, thunkAPI) => {
     try {
-      return await adminService.updateInvestment(data.id, data.investmentData);
+      return await adminService.updateInvestment(investmentId, investmentData);
     } catch (error) {
-      const message = error.response?.data?.error || 'Failed to update investment';
+      const message = error.response?.data?.error || error.message || error.toString();
       return thunkAPI.rejectWithValue(message);
     }
   }
 );
 
-const adminSlice = createSlice({
+// ============= NEW THUNKS FOR NEW FEATURES =============
+
+// Get activity logs
+export const getActivityLogs = createAsyncThunk(
+  'admin/getActivityLogs',
+  async (params, thunkAPI) => {
+    try {
+      return await adminService.getActivityLogs(params);
+    } catch (error) {
+      const message = error.response?.data?.error || error.message || error.toString();
+      return thunkAPI.rejectWithValue(message);
+    }
+  }
+);
+
+// Get overpayments
+export const getOverpayments = createAsyncThunk(
+  'admin/getOverpayments',
+  async (_, thunkAPI) => {
+    try {
+      return await adminService.getOverpayments();
+    } catch (error) {
+      const message = error.response?.data?.error || error.message || error.toString();
+      return thunkAPI.rejectWithValue(message);
+    }
+  }
+);
+
+// Allocate overpayment
+export const allocateOverpayment = createAsyncThunk(
+  'admin/allocateOverpayment',
+  async ({ overpaymentId, allocationData }, thunkAPI) => {
+    try {
+      return await adminService.allocateOverpayment(overpaymentId, allocationData);
+    } catch (error) {
+      const message = error.response?.data?.error || error.message || error.toString();
+      return thunkAPI.rejectWithValue(message);
+    }
+  }
+);
+
+// Modify loan debt
+export const modifyLoanDebt = createAsyncThunk(
+  'admin/modifyLoanDebt',
+  async ({ loanId, debtData }, thunkAPI) => {
+    try {
+      return await adminService.modifyLoanDebt(loanId, debtData);
+    } catch (error) {
+      const message = error.response?.data?.error || error.message || error.toString();
+      return thunkAPI.rejectWithValue(message);
+    }
+  }
+);
+
+// Add admin contribution
+export const addAdminContribution = createAsyncThunk(
+  'admin/addAdminContribution',
+  async (contributionData, thunkAPI) => {
+    try {
+      return await adminService.addAdminContribution(contributionData);
+    } catch (error) {
+      const message = error.response?.data?.error || error.message || error.toString();
+      return thunkAPI.rejectWithValue(message);
+    }
+  }
+);
+
+// Get user active loans
+export const getUserActiveLoans = createAsyncThunk(
+  'admin/getUserActiveLoans',
+  async (userId, thunkAPI) => {
+    try {
+      return await adminService.getUserActiveLoans(userId);
+    } catch (error) {
+      const message = error.response?.data?.error || error.message || error.toString();
+      return thunkAPI.rejectWithValue(message);
+    }
+  }
+);
+
+// ============= SLICE DEFINITION =============
+
+export const adminSlice = createSlice({
   name: 'admin',
   initialState,
   reducers: {
@@ -206,11 +293,15 @@ const adminSlice = createSlice({
       state.isError = false;
       state.message = '';
     },
-    resetAll: (state) => initialState
+    clearMessage: (state) => {
+      state.message = '';
+      state.isError = false;
+      state.isSuccess = false;
+    }
   },
   extraReducers: (builder) => {
     builder
-      // Get dashboard
+      // Dashboard
       .addCase(getDashboard.pending, (state) => {
         state.isLoading = true;
       })
@@ -225,7 +316,7 @@ const adminSlice = createSlice({
         state.message = action.payload;
       })
       
-      // Get users
+      // Users
       .addCase(getUsers.pending, (state) => {
         state.isLoading = true;
       })
@@ -240,7 +331,7 @@ const adminSlice = createSlice({
         state.message = action.payload;
       })
       
-      // Create user
+      // Create User
       .addCase(createUser.pending, (state) => {
         state.isLoading = true;
       })
@@ -248,6 +339,7 @@ const adminSlice = createSlice({
         state.isLoading = false;
         state.isSuccess = true;
         state.message = action.payload.message;
+        // Add new user to the list
         state.users.push(action.payload.user);
       })
       .addCase(createUser.rejected, (state, action) => {
@@ -256,7 +348,7 @@ const adminSlice = createSlice({
         state.message = action.payload;
       })
       
-      // Delete user
+      // Delete User
       .addCase(deleteUser.pending, (state) => {
         state.isLoading = true;
       })
@@ -264,7 +356,6 @@ const adminSlice = createSlice({
         state.isLoading = false;
         state.isSuccess = true;
         state.message = action.payload.message;
-        state.users = state.users.filter(user => user.id !== action.meta.arg);
       })
       .addCase(deleteUser.rejected, (state, action) => {
         state.isLoading = false;
@@ -272,7 +363,7 @@ const adminSlice = createSlice({
         state.message = action.payload;
       })
       
-      // Suspend user
+      // Suspend User
       .addCase(suspendUser.pending, (state) => {
         state.isLoading = true;
       })
@@ -280,10 +371,11 @@ const adminSlice = createSlice({
         state.isLoading = false;
         state.isSuccess = true;
         state.message = action.payload.message;
-        // Update the user in the users array
-        state.users = state.users.map(user => 
-          user.id === action.payload.user.id ? action.payload.user : user
-        );
+        // Update user in the list
+        const userIndex = state.users.findIndex(user => user.id === action.payload.user.id);
+        if (userIndex !== -1) {
+          state.users[userIndex] = action.payload.user;
+        }
       })
       .addCase(suspendUser.rejected, (state, action) => {
         state.isLoading = false;
@@ -291,7 +383,7 @@ const adminSlice = createSlice({
         state.message = action.payload;
       })
       
-      // Get all loans
+      // Loans
       .addCase(getAllLoans.pending, (state) => {
         state.isLoading = true;
       })
@@ -306,22 +398,12 @@ const adminSlice = createSlice({
         state.message = action.payload;
       })
       
-      // Get pending loans
-      .addCase(getPendingLoans.pending, (state) => {
-        state.isLoading = true;
-      })
+      // Pending Loans
       .addCase(getPendingLoans.fulfilled, (state, action) => {
-        state.isLoading = false;
-        state.isSuccess = true;
-        state.pendingLoans = action.payload.pending_loans;
-      })
-      .addCase(getPendingLoans.rejected, (state, action) => {
-        state.isLoading = false;
-        state.isError = true;
-        state.message = action.payload;
+        state.pendingLoans = action.payload.loans;
       })
       
-      // Approve loan
+      // Approve Loan
       .addCase(approveLoan.pending, (state) => {
         state.isLoading = true;
       })
@@ -329,20 +411,6 @@ const adminSlice = createSlice({
         state.isLoading = false;
         state.isSuccess = true;
         state.message = action.payload.message;
-        
-        // Update the loans list if it exists
-        if (state.loans) {
-          state.loans = state.loans.map(loan => 
-            loan.id === action.payload.loan.id ? action.payload.loan : loan
-          );
-        }
-        
-        // Update pending loans list if it exists
-        if (state.pendingLoans) {
-          state.pendingLoans = state.pendingLoans.filter(
-            loan => loan.id !== action.payload.loan.id
-          );
-        }
       })
       .addCase(approveLoan.rejected, (state, action) => {
         state.isLoading = false;
@@ -350,7 +418,7 @@ const adminSlice = createSlice({
         state.message = action.payload;
       })
       
-      // Reject loan
+      // Reject Loan
       .addCase(rejectLoan.pending, (state) => {
         state.isLoading = true;
       })
@@ -358,20 +426,6 @@ const adminSlice = createSlice({
         state.isLoading = false;
         state.isSuccess = true;
         state.message = action.payload.message;
-        
-        // Update the loans list if it exists
-        if (state.loans) {
-          state.loans = state.loans.map(loan => 
-            loan.id === action.payload.loan.id ? action.payload.loan : loan
-          );
-        }
-        
-        // Update pending loans list if it exists
-        if (state.pendingLoans) {
-          state.pendingLoans = state.pendingLoans.filter(
-            loan => loan.id !== action.payload.loan.id
-          );
-        }
       })
       .addCase(rejectLoan.rejected, (state, action) => {
         state.isLoading = false;
@@ -379,7 +433,7 @@ const adminSlice = createSlice({
         state.message = action.payload;
       })
       
-      // Add loan payment
+      // Add Loan Payment
       .addCase(addLoanPayment.pending, (state) => {
         state.isLoading = true;
       })
@@ -387,13 +441,6 @@ const adminSlice = createSlice({
         state.isLoading = false;
         state.isSuccess = true;
         state.message = action.payload.message;
-        
-        // Update the loan in the loans array
-        if (state.loans) {
-          state.loans = state.loans.map(loan => 
-            loan.id === action.payload.loan.id ? action.payload.loan : loan
-          );
-        }
       })
       .addCase(addLoanPayment.rejected, (state, action) => {
         state.isLoading = false;
@@ -401,7 +448,7 @@ const adminSlice = createSlice({
         state.message = action.payload;
       })
       
-      // Add contribution
+      // Add Contribution
       .addCase(addContribution.pending, (state) => {
         state.isLoading = true;
       })
@@ -416,64 +463,119 @@ const adminSlice = createSlice({
         state.message = action.payload;
       })
       
-      // Get investments
-      .addCase(getInvestments.pending, (state) => {
-        state.isLoading = true;
-      })
+      // Investments
       .addCase(getInvestments.fulfilled, (state, action) => {
-        state.isLoading = false;
-        state.isSuccess = true;
         state.investments = action.payload.investments;
       })
-      .addCase(getInvestments.rejected, (state, action) => {
-        state.isLoading = false;
-        state.isError = true;
-        state.message = action.payload;
-      })
-      
-      // Create investment
-      .addCase(createInvestment.pending, (state) => {
-        state.isLoading = true;
-      })
       .addCase(createInvestment.fulfilled, (state, action) => {
-        state.isLoading = false;
         state.isSuccess = true;
         state.message = action.payload.message;
-        if (state.investments) {
-          state.investments = [...state.investments, action.payload.investment];
-        } else {
-          state.investments = [action.payload.investment];
-        }
-      })
-      .addCase(createInvestment.rejected, (state, action) => {
-        state.isLoading = false;
-        state.isError = true;
-        state.message = action.payload;
-      })
-      
-      // Update investment
-      .addCase(updateInvestment.pending, (state) => {
-        state.isLoading = true;
+        state.investments.push(action.payload.investment);
       })
       .addCase(updateInvestment.fulfilled, (state, action) => {
+        state.isSuccess = true;
+        state.message = action.payload.message;
+      })
+      
+      // ============= NEW FEATURE REDUCERS =============
+      
+      // Activity Logs
+      .addCase(getActivityLogs.pending, (state) => {
+        state.isLoading = true;
+      })
+      .addCase(getActivityLogs.fulfilled, (state, action) => {
+        state.isLoading = false;
+        state.isSuccess = true;
+        state.activityLogs = action.payload.logs;
+        state.pagination = action.payload.pagination;
+      })
+      .addCase(getActivityLogs.rejected, (state, action) => {
+        state.isLoading = false;
+        state.isError = true;
+        state.message = action.payload;
+      })
+      
+      // Overpayments
+      .addCase(getOverpayments.pending, (state) => {
+        state.isLoading = true;
+      })
+      .addCase(getOverpayments.fulfilled, (state, action) => {
+        state.isLoading = false;
+        state.isSuccess = true;
+        state.overpayments = action.payload.overpayments;
+      })
+      .addCase(getOverpayments.rejected, (state, action) => {
+        state.isLoading = false;
+        state.isError = true;
+        state.message = action.payload;
+      })
+      
+      // Allocate Overpayment
+      .addCase(allocateOverpayment.pending, (state) => {
+        state.isLoading = true;
+      })
+      .addCase(allocateOverpayment.fulfilled, (state, action) => {
         state.isLoading = false;
         state.isSuccess = true;
         state.message = action.payload.message;
-        if (state.investments) {
-          state.investments = state.investments.map(investment => 
-            investment.id === action.payload.investment.id 
-              ? action.payload.investment 
-              : investment
-          );
+        // Update overpayment in the list
+        const overpaymentIndex = state.overpayments.findIndex(op => op.id === action.payload.overpayment.id);
+        if (overpaymentIndex !== -1) {
+          state.overpayments[overpaymentIndex] = action.payload.overpayment;
         }
       })
-      .addCase(updateInvestment.rejected, (state, action) => {
+      .addCase(allocateOverpayment.rejected, (state, action) => {
         state.isLoading = false;
+        state.isError = true;
+        state.message = action.payload;
+      })
+      
+      // Modify Loan Debt
+      .addCase(modifyLoanDebt.pending, (state) => {
+        state.isLoading = true;
+      })
+      .addCase(modifyLoanDebt.fulfilled, (state, action) => {
+        state.isLoading = false;
+        state.isSuccess = true;
+        state.message = action.payload.message;
+        // Update loan in the list
+        const loanIndex = state.loans.findIndex(loan => loan.id === action.payload.loan.id);
+        if (loanIndex !== -1) {
+          state.loans[loanIndex] = action.payload.loan;
+        }
+      })
+      .addCase(modifyLoanDebt.rejected, (state, action) => {
+        state.isLoading = false;
+        state.isError = true;
+        state.message = action.payload;
+      })
+      
+      // Add Admin Contribution
+      .addCase(addAdminContribution.pending, (state) => {
+        state.isLoading = true;
+      })
+      .addCase(addAdminContribution.fulfilled, (state, action) => {
+        state.isLoading = false;
+        state.isSuccess = true;
+        state.message = action.payload.message;
+      })
+      .addCase(addAdminContribution.rejected, (state, action) => {
+        state.isLoading = false;
+        state.isError = true;
+        state.message = action.payload;
+      })
+      
+      // Get User Active Loans
+      .addCase(getUserActiveLoans.fulfilled, (state, action) => {
+        state.isSuccess = true;
+        // This is typically used in components, not stored in global state
+      })
+      .addCase(getUserActiveLoans.rejected, (state, action) => {
         state.isError = true;
         state.message = action.payload;
       });
   }
 });
 
-export const { reset, resetAll } = adminSlice.actions;
+export const { reset, clearMessage } = adminSlice.actions;
 export default adminSlice.reducer;

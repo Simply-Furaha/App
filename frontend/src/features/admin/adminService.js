@@ -1,5 +1,7 @@
-// src/features/admin/adminService.js
+// src/features/admin/adminService.js - Enhanced with new features
 import axios from '../../utils/axiosConfig';
+
+// ============= EXISTING SERVICES =============
 
 // Get admin dashboard data
 const getDashboard = async () => {
@@ -85,7 +87,46 @@ const updateInvestment = async (investmentId, investmentData) => {
   return response.data;
 };
 
+// ============= NEW FEATURES =============
+
+// Get admin activity logs
+const getActivityLogs = async (params = {}) => {
+  const response = await axios.get('/admin/activity-logs', { params });
+  return response.data;
+};
+
+// Get overpayments
+const getOverpayments = async () => {
+  const response = await axios.get('/admin/overpayments');
+  return response.data;
+};
+
+// Allocate overpayment
+const allocateOverpayment = async (overpaymentId, allocationData) => {
+  const response = await axios.put(`/admin/overpayments/${overpaymentId}/allocate`, allocationData);
+  return response.data;
+};
+
+// Modify loan debt
+const modifyLoanDebt = async (loanId, debtData) => {
+  const response = await axios.put(`/admin/loans/${loanId}/modify-debt`, debtData);
+  return response.data;
+};
+
+// Add contribution for another admin
+const addAdminContribution = async (contributionData) => {
+  const response = await axios.post('/admin/admin-contribution', contributionData);
+  return response.data;
+};
+
+// Get user's active loans (for overpayment allocation)
+const getUserActiveLoans = async (userId) => {
+  const response = await axios.get(`/admin/users/${userId}/active-loans`);
+  return response.data;
+};
+
 const adminService = {
+  // Existing services
   getDashboard,
   getUsers,
   createUser,
@@ -99,7 +140,15 @@ const adminService = {
   addContribution,
   getInvestments,
   createInvestment,
-  updateInvestment
+  updateInvestment,
+  
+  // New services
+  getActivityLogs,
+  getOverpayments,
+  allocateOverpayment,
+  modifyLoanDebt,
+  addAdminContribution,
+  getUserActiveLoans
 };
 
 export default adminService;

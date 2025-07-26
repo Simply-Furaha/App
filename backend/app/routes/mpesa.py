@@ -1,3 +1,4 @@
+# app/routes/mpesa.py - COMPLETE ENHANCED VERSION (Replace your existing file)
 from flask import Blueprint, request, jsonify, current_app
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from ..models import db
@@ -5,7 +6,7 @@ from ..models.user import User
 from ..models.contribution import Contribution
 from ..models.loan import Loan, LoanPayment
 from ..models.payment_status import PaymentStatus
-from ..services.daraja_service import initiate_stk_push, process_callback, validate_callback_security
+from ..services.daraja_service import initiate_stk_push, process_callback, validate_callback_security, simulate_callback_response
 from datetime import datetime, date
 import traceback
 import logging
@@ -14,10 +15,12 @@ import json
 logger = logging.getLogger(__name__)
 mpesa_bp = Blueprint('mpesa', __name__)
 
+# ============= STK PUSH ENDPOINTS =============
+
 @mpesa_bp.route('/initiate-contribution', methods=['POST'])
 @jwt_required()
 def initiate_contribution():
-    """Initiate M-PESA STK push for monthly contribution"""
+    """Initiate M-PESA STK push for monthly contribution - ENHANCED"""
     try:
         data = request.get_json()
         current_user_id = get_jwt_identity()
@@ -60,7 +63,7 @@ def initiate_contribution():
         
         logger.info(f"Using phone number: {phone_number}")
         
-        # Check for duplicate contribution this month
+        # Check for duplicate contribution this month (optional check)
         today = date.today()
         current_month = today.replace(day=1)  # First day of current month
         
@@ -69,97 +72,47 @@ def initiate_contribution():
             month=current_month
         ).first()
         
+        # Allow multiple contributions per month, but warn
         if existing_contribution:
-            return jsonify({
-                "error": f"You have already contributed KES {existing_contribution.amount:,.2f} for {current_month.strftime('%B %Y')}. Only one contribution per month is allowed.",
-                "existing_amount": existing_contribution.amount,
-                "existing_date": existing_contribution.created_at.isoformat()
-            }), 400
+            logger.info(f"⚠️ User already has contribution for {current_month.strftime('%B %Y')}: {existing_contribution.amount}")
         
-        # Check if test mode is enabled
-        if current_app.config.get('MPESA_TEST_MODE', False):
-            logger.info("🧪 M-PESA test mode enabled - simulating successful transaction")
-            
-            # Create contribution immediately in test mode
-            contribution = Contribution(
-                user_id=user.id,
-                amount=amount,
-                month=current_month,
-                payment_method='mpesa',
-                transaction_id=f"TEST-{datetime.now().strftime('%Y%m%d%H%M%S')}"
-            )
-            
-            db.session.add(contribution)
-            db.session.commit()
-            
+        # Generate unique account reference
+        month_str = data.get('month', current_month.strftime('%Y-%m'))
+        account_reference = f"CONTRIB-{user_id}-{month_str}"
+        transaction_desc = f"Contribution {month_str}"
+        
+        logger.info(f"🚀 Initiating STK push for contribution:")
+        logger.info(f"   User: {user.username}")
+        logger.info(f"   Amount: {amount}")
+        logger.info(f"   Phone: {phone_number}")
+        logger.info(f"   Reference: {account_reference}")
+        
+        # Initiate STK push using enhanced service
+        result = initiate_stk_push(
+            phone_number=phone_number,
+            amount=amount,
+            account_reference=account_reference,
+            transaction_desc=transaction_desc,
+            transaction_type="contribution",
+            user_id=user_id
+        )
+        
+        if result.get('success'):
+            logger.info("✅ STK push initiated successfully")
             return jsonify({
-                "message": "TEST MODE: Contribution recorded successfully",
-                "test_mode": True,
-                "contribution": contribution.to_dict(),
-                "mpesa_response": {
-                    "MerchantRequestID": "test-merchant-123",
-                    "CheckoutRequestID": "test-checkout-456",
-                    "ResponseCode": "0",
-                    "ResponseDescription": "Success. Request accepted for processing",
-                    "CustomerMessage": "Success. Request accepted for processing"
-                }
+                "success": True,
+                "message": "Payment request sent to your phone. Please enter your M-PESA PIN to complete the transaction.",
+                "checkout_request_id": result.get('checkout_request_id'),
+                "merchant_request_id": result.get('merchant_request_id'),
+                "amount": amount,
+                "phone_number": phone_number
             }), 200
-        
-        # Real M-PESA STK Push
-        try:
-            stk_response = initiate_stk_push(
-                phone_number=phone_number,
-                amount=amount,
-                account_reference=f"NF-{user.username[:8]}",
-                transaction_desc=f"Contribution {current_month.strftime('%b%Y')}",
-                transaction_type="contribution"
-            )
-            
-            logger.info(f"📱 STK push response: {stk_response}")
-            
-            if stk_response.get('error'):
-                return jsonify({
-                    "error": f"M-PESA Error: {stk_response['error']}"
-                }), 400
-            
-            # Check if STK push was successful
-            if stk_response.get('ResponseCode') == '0':
-                # Create payment status record for tracking
-                checkout_request_id = stk_response.get('CheckoutRequestID')
-                merchant_request_id = stk_response.get('MerchantRequestID')
-                
-                if checkout_request_id:
-                    PaymentStatus.create_pending_payment(
-                        checkout_request_id=checkout_request_id,
-                        merchant_request_id=merchant_request_id,
-                        user_id=user.id,
-                        transaction_type='contribution',
-                        amount=amount,
-                        phone_number=phone_number
-                    )
-                
-                return jsonify({
-                    "message": "Payment request sent to your phone. Please enter your M-PESA PIN to complete the transaction.",
-                    "mpesa_response": stk_response,
-                    "checkout_request_id": checkout_request_id,
-                    "merchant_request_id": merchant_request_id,
-                    "instructions": [
-                        "1. Check your phone for the M-PESA payment request",
-                        "2. Enter your M-PESA PIN when prompted",
-                        "3. Your contribution will be recorded automatically upon successful payment",
-                        "4. You will receive an M-PESA confirmation SMS"
-                    ]
-                }), 200
-            else:
-                return jsonify({
-                    "error": f"M-PESA request failed: {stk_response.get('ResponseDescription', 'Unknown error')}"
-                }), 400
-                
-        except Exception as mpesa_error:
-            logger.error(f"❌ M-PESA STK push error: {str(mpesa_error)}")
+        else:
+            logger.error(f"❌ STK push failed: {result}")
             return jsonify({
-                "error": "Failed to initiate M-PESA payment. Please try again or contact support."
-            }), 500
+                "success": False,
+                "error": result.get('error', 'Payment initiation failed')
+            }), 400
             
     except Exception as e:
         error_details = str(e)
@@ -172,18 +125,22 @@ def initiate_contribution():
             "error": "An error occurred while processing your request. Please try again."
         }), 500
 
+@mpesa_bp.route('/contribute', methods=['POST'])
+@jwt_required()
+def initiate_contribution_v2():
+    """Alternative endpoint for contribution payments"""
+    return initiate_contribution()
+
 @mpesa_bp.route('/initiate-loan-repayment', methods=['POST'])
 @jwt_required()
 def initiate_loan_repayment():
-    """Initiate M-PESA STK push for loan repayment"""
+    """Initiate M-PESA STK push for loan repayment - ENHANCED"""
     try:
         data = request.get_json()
         current_user_id = get_jwt_identity()
-        
-        # Convert to integer if it's a string
         user_id = int(current_user_id) if isinstance(current_user_id, str) else current_user_id
         
-        logger.info(f"💳 M-PESA loan repayment request from user ID: {user_id}")
+        logger.info(f"🏦 M-PESA loan repayment request from user ID: {user_id}")
         logger.info(f"Request data: {data}")
         
         # Validate required fields
@@ -193,151 +150,90 @@ def initiate_loan_repayment():
         try:
             loan_id = int(data['loan_id'])
             amount = float(data['amount'])
-        except ValueError:
-            return jsonify({"error": "Invalid loan ID or amount format"}), 400
+        except (ValueError, TypeError):
+            return jsonify({"error": "Invalid loan ID or amount"}), 400
         
         if amount <= 0:
             return jsonify({"error": "Amount must be greater than zero"}), 400
             
-        if amount < 1:  # M-PESA minimum
-            return jsonify({"error": "Minimum repayment amount is KES 1"}), 400
+        if amount < 1:
+            return jsonify({"error": "Minimum payment amount is KES 1"}), 400
             
-        if amount > 70000:  # M-PESA maximum
-            return jsonify({"error": "Maximum repayment amount is KES 70,000"}), 400
+        if amount > 70000:
+            return jsonify({"error": "Maximum payment amount is KES 70,000"}), 400
+        
+        # Get and validate loan
+        loan = Loan.query.get(loan_id)
+        if not loan:
+            return jsonify({"error": "Loan not found"}), 404
+            
+        if loan.user_id != user_id:
+            return jsonify({"error": "Unauthorized access to loan"}), 403
+            
+        if loan.status != 'approved':
+            return jsonify({"error": "Loan is not approved for repayment"}), 400
         
         # Get user
         user = User.query.get(user_id)
         if not user:
             return jsonify({"error": "User not found"}), 404
         
-        # Get loan and validate ownership
-        loan = Loan.query.get(loan_id)
-        if not loan:
-            return jsonify({"error": "Loan not found"}), 404
-            
-        if loan.user_id != user_id:
-            return jsonify({"error": "Access denied. This loan does not belong to you."}), 403
-            
-        if loan.status != 'approved':
-            return jsonify({"error": "Only approved loans can be repaid"}), 400
-            
-        if loan.unpaid_balance <= 0:
-            return jsonify({"error": "This loan is already fully paid"}), 400
-        
-        # Validate repayment amount
-        if amount > loan.unpaid_balance:
-            return jsonify({
-                "error": f"Repayment amount (KES {amount:,.2f}) cannot exceed outstanding balance (KES {loan.unpaid_balance:,.2f})",
-                "maximum_amount": loan.unpaid_balance
-            }), 400
-        
-        # Use provided phone number or fall back to user's phone number
         phone_number = data.get('phone_number', user.phone_number)
-        
         if not phone_number:
             return jsonify({"error": "Phone number is required"}), 400
         
-        logger.info(f"Using phone number: {phone_number}")
+        # Check remaining balance
+        remaining_balance = loan.unpaid_balance or (loan.amount_due - loan.paid_amount)
+        if remaining_balance <= 0:
+            return jsonify({"error": "Loan is already fully paid"}), 400
         
-        # Check if test mode is enabled
-        if current_app.config.get('MPESA_TEST_MODE', False):
-            logger.info("🧪 M-PESA test mode enabled - simulating successful loan repayment")
-            
-            # Create loan payment immediately in test mode
-            payment = LoanPayment(
-                loan_id=loan.id,
-                amount=amount,
-                payment_date=datetime.now(),
-                payment_method='mpesa',
-                transaction_id=f"TEST-{datetime.now().strftime('%Y%m%d%H%M%S')}"
-            )
-            
-            # Update loan
-            loan.paid_amount += amount
-            loan.unpaid_balance = max(0, loan.amount_due - loan.paid_amount)
-            
-            if loan.unpaid_balance == 0:
-                loan.status = 'paid'
-                loan.paid_date = datetime.now()
-            
-            db.session.add(payment)
-            db.session.commit()
-            
+        # Generate unique account reference
+        account_reference = f"LOAN-{loan_id}-{user_id}"
+        transaction_desc = f"Loan #{loan_id} payment"
+        
+        logger.info(f"🚀 Initiating STK push for loan repayment:")
+        logger.info(f"   User: {user.username}")
+        logger.info(f"   Loan ID: {loan_id}")
+        logger.info(f"   Amount: {amount}")
+        logger.info(f"   Remaining Balance: {remaining_balance}")
+        logger.info(f"   Phone: {phone_number}")
+        
+        # Initiate STK push using enhanced service
+        result = initiate_stk_push(
+            phone_number=phone_number,
+            amount=amount,
+            account_reference=account_reference,
+            transaction_desc=transaction_desc,
+            transaction_type="loan_repayment",
+            user_id=user_id
+        )
+        
+        # Update payment status with loan_id for tracking
+        if result.get('success') and result.get('checkout_request_id'):
+            payment_status = PaymentStatus.query.filter_by(
+                checkout_request_id=result['checkout_request_id']
+            ).first()
+            if payment_status:
+                payment_status.loan_id = loan_id
+                db.session.commit()
+        
+        if result.get('success'):
+            logger.info("✅ Loan repayment STK push initiated successfully")
             return jsonify({
-                "message": "TEST MODE: Loan repayment recorded successfully",
-                "test_mode": True,
-                "payment": payment.to_dict(),
-                "updated_loan": loan.to_dict(),
-                "mpesa_response": {
-                    "MerchantRequestID": "test-merchant-456",
-                    "CheckoutRequestID": "test-checkout-789",
-                    "ResponseCode": "0",
-                    "ResponseDescription": "Success. Request accepted for processing",
-                    "CustomerMessage": "Success. Request accepted for processing"
-                }
+                "success": True,
+                "message": "Payment request sent to your phone. Please enter your M-PESA PIN to complete the transaction.",
+                "checkout_request_id": result.get('checkout_request_id'),
+                "merchant_request_id": result.get('merchant_request_id'),
+                "amount": amount,
+                "remaining_balance": remaining_balance,
+                "loan_id": loan_id
             }), 200
-        
-        # Real M-PESA STK Push
-        try:
-            stk_response = initiate_stk_push(
-                phone_number=phone_number,
-                amount=amount,
-                account_reference=f"LN-{loan.id}",
-                transaction_desc=f"Loan #{loan.id} Payment",
-                transaction_type="loan_repayment"
-            )
-            
-            logger.info(f"📱 Loan repayment STK push response: {stk_response}")
-            
-            if stk_response.get('error'):
-                return jsonify({
-                    "error": f"M-PESA Error: {stk_response['error']}"
-                }), 400
-            
-            # Check if STK push was successful
-            if stk_response.get('ResponseCode') == '0':
-                # Create payment status record for tracking
-                checkout_request_id = stk_response.get('CheckoutRequestID')
-                merchant_request_id = stk_response.get('MerchantRequestID')
-                
-                if checkout_request_id:
-                    PaymentStatus.create_pending_payment(
-                        checkout_request_id=checkout_request_id,
-                        merchant_request_id=merchant_request_id,
-                        user_id=user.id,
-                        transaction_type='loan_repayment',
-                        amount=amount,
-                        phone_number=phone_number,
-                        loan_id=loan.id
-                    )
-                
-                return jsonify({
-                    "message": f"Payment request for KES {amount:,.2f} sent to your phone. Please enter your M-PESA PIN to complete the transaction.",
-                    "mpesa_response": stk_response,
-                    "checkout_request_id": checkout_request_id,
-                    "merchant_request_id": merchant_request_id,
-                    "loan_details": {
-                        "loan_id": loan.id,
-                        "payment_amount": amount,
-                        "remaining_balance": loan.unpaid_balance - amount
-                    },
-                    "instructions": [
-                        "1. Check your phone for the M-PESA payment request",
-                        "2. Enter your M-PESA PIN when prompted",
-                        "3. Your loan payment will be recorded automatically upon successful payment",
-                        "4. You will receive an M-PESA confirmation SMS"
-                    ]
-                }), 200
-            else:
-                return jsonify({
-                    "error": f"M-PESA request failed: {stk_response.get('ResponseDescription', 'Unknown error')}"
-                }), 400
-                
-        except Exception as mpesa_error:
-            logger.error(f"❌ M-PESA loan repayment STK push error: {str(mpesa_error)}")
+        else:
+            logger.error(f"❌ Loan repayment STK push failed: {result}")
             return jsonify({
-                "error": "Failed to initiate M-PESA payment. Please try again or contact support."
-            }), 500
+                "success": False,
+                "error": result.get('error', 'Payment initiation failed')
+            }), 400
             
     except Exception as e:
         error_details = str(e)
@@ -350,50 +246,13 @@ def initiate_loan_repayment():
             "error": "An error occurred while processing your request. Please try again."
         }), 500
 
-@mpesa_bp.route('/payment-status/<checkout_request_id>', methods=['GET'])
+@mpesa_bp.route('/repay-loan', methods=['POST'])
 @jwt_required()
-def get_payment_status(checkout_request_id):
-    """Get payment status for a specific checkout request"""
-    try:
-        current_user_id = get_jwt_identity()
-        user_id = int(current_user_id) if isinstance(current_user_id, str) else current_user_id
-        
-        # Find payment status
-        payment_status = PaymentStatus.find_by_checkout_id(checkout_request_id)
-        
-        if not payment_status:
-            return jsonify({"error": "Payment status not found"}), 404
-        
-        # Verify ownership
-        if payment_status.user_id != user_id:
-            return jsonify({"error": "Access denied"}), 403
-        
-        return jsonify({
-            "payment_status": payment_status.to_dict()
-        }), 200
-        
-    except Exception as e:
-        logger.error(f"❌ Error getting payment status: {str(e)}")
-        return jsonify({"error": str(e)}), 500
+def initiate_loan_repayment_v2():
+    """Alternative endpoint for loan repayment"""
+    return initiate_loan_repayment()
 
-@mpesa_bp.route('/user-payments', methods=['GET'])
-@jwt_required()
-def get_user_payments():
-    """Get all pending payments for current user"""
-    try:
-        current_user_id = get_jwt_identity()
-        user_id = int(current_user_id) if isinstance(current_user_id, str) else current_user_id
-        
-        # Get pending payments
-        pending_payments = PaymentStatus.get_user_pending_payments(user_id)
-        
-        return jsonify({
-            "pending_payments": [payment.to_dict() for payment in pending_payments]
-        }), 200
-        
-    except Exception as e:
-        logger.error(f"❌ Error getting user payments: {str(e)}")
-        return jsonify({"error": str(e)}), 500
+# ============= CALLBACK ENDPOINTS =============
 
 @mpesa_bp.route('/callback', methods=['POST'])
 def mpesa_callback():
@@ -407,303 +266,70 @@ def mpesa_callback():
         
         # Log the entire request for debugging
         callback_data = request.get_json()
-        logger.info(f"📥 Callback headers: {dict(request.headers)}")
-        logger.info(f"📥 Callback data: {json.dumps(callback_data, indent=2)}")
+        logger.info(f"📥 Callback data received: {json.dumps(callback_data, indent=2)}")
         
-        # Basic validation
-        if not callback_data or not isinstance(callback_data, dict):
-            logger.error("❌ Invalid callback data - not a JSON object")
-            return jsonify({"ResponseCode": "0", "ResponseDesc": "Accepted"}), 200
+        if not callback_data:
+            logger.error("❌ Empty callback data received")
+            return jsonify({
+                "ResultCode": 1,
+                "ResultDesc": "Invalid callback data"
+            }), 200
         
-        # Process the callback
+        # Process the callback using enhanced service
         result = process_callback(callback_data)
         
-        if not result['success']:
-            logger.error(f"❌ Callback processing failed: {result['message']}")
-            
-            # Try to update payment status if we have checkout_request_id
-            if 'checkout_request_id' in result:
-                payment_status = PaymentStatus.find_by_checkout_id(result['checkout_request_id'])
-                if payment_status:
-                    payment_status.mark_failed(result['message'])
-            
-            return jsonify({"ResponseCode": "0", "ResponseDesc": "Accepted"}), 200
-        
-        # Extract transaction details
-        transaction = result['transaction']
-        receipt_number = transaction.get('receipt_number')
-        amount = transaction.get('amount')
-        phone_number = transaction.get('phone_number')
-        checkout_request_id = transaction.get('checkout_request_id')
-        
-        logger.info(f"💰 Processing successful transaction:")
-        logger.info(f"   Receipt: {receipt_number}")
-        logger.info(f"   Amount: KES {amount}")
-        logger.info(f"   Phone: {phone_number}")
-        
-        # Find user by phone number
-        user = find_user_by_phone_number(phone_number)
-        
-        if not user:
-            logger.error(f"❌ User not found for phone number: {phone_number}")
-            return jsonify({"ResponseCode": "0", "ResponseDesc": "Accepted"}), 200
-        
-        logger.info(f"👤 Found user: {user.username} ({user.first_name} {user.last_name})")
-        
-        # Find payment status record
-        payment_status = None
-        if checkout_request_id:
-            payment_status = PaymentStatus.find_by_checkout_id(checkout_request_id)
-        
-        # Determine transaction type
-        if payment_status:
-            transaction_type = payment_status.transaction_type
-            logger.info(f"🔍 Transaction type from payment status: {transaction_type}")
+        if result.get('success'):
+            logger.info("✅ Callback processed successfully")
+            return jsonify({
+                "ResultCode": 0,
+                "ResultDesc": "Success"
+            }), 200
         else:
-            transaction_type = determine_transaction_type(transaction, user)
-            logger.info(f"🔍 Transaction type determined: {transaction_type}")
-        
-        # Process based on transaction type
-        success = False
-        related_id = None
-        
-        if transaction_type == 'contribution':
-            success, related_id = process_contribution_payment(user, amount, receipt_number, transaction)
-        elif transaction_type == 'loan_repayment':
-            loan_id = payment_status.loan_id if payment_status else None
-            success, related_id = process_loan_repayment(user, amount, receipt_number, transaction, loan_id)
-        else:
-            logger.warning(f"⚠️ Unknown transaction type for user {user.username}")
-        
-        # Update payment status
-        if payment_status:
-            if success:
-                payment_status.mark_success(receipt_number, related_id)
-            else:
-                payment_status.mark_failed("Failed to process payment")
-        
-        if success:
-            logger.info(f"✅ Transaction processed successfully for {user.username}")
-        else:
-            logger.error(f"❌ Failed to process transaction for {user.username}")
-        
-        # Always return success to M-PESA to prevent retries
-        return jsonify({"ResponseCode": "0", "ResponseDesc": "Accepted"}), 200
-        
-    except Exception as e:
-        logger.error(f"❌ Error in M-PESA callback: {str(e)}")
-        logger.error(traceback.format_exc())
-        
-        # Always return success to M-PESA even if we have errors
-        return jsonify({"ResponseCode": "0", "ResponseDesc": "Accepted"}), 200
-
-def find_user_by_phone_number(phone_number):
-    """Find user by phone number with multiple format matching"""
-    try:
-        formatted_phone = str(phone_number)
-        
-        # Generate search patterns for different phone number formats
-        search_patterns = []
-        
-        if formatted_phone.startswith('254'):
-            search_patterns.extend([
-                formatted_phone,  # 254712345678
-                '0' + formatted_phone[3:],  # 0712345678
-                '+' + formatted_phone  # +254712345678
-            ])
-        elif formatted_phone.startswith('0'):
-            search_patterns.extend([
-                formatted_phone,  # 0712345678
-                '254' + formatted_phone[1:],  # 254712345678
-                '+254' + formatted_phone[1:]  # +254712345678
-            ])
-        else:
-            search_patterns.append(formatted_phone)
-        
-        # Search for user with any of the patterns
-        for pattern in search_patterns:
-            user = User.query.filter(User.phone_number.like(f"%{pattern[-9:]}")).first()
-            if user:
-                logger.info(f"🔍 User found with pattern: {pattern}")
-                return user
-        
-        logger.warning(f"🔍 No user found for any phone pattern: {search_patterns}")
-        return None
-        
-    except Exception as e:
-        logger.error(f"❌ Error finding user by phone: {str(e)}")
-        return None
-
-def determine_transaction_type(transaction, user):
-    """Determine if transaction is for contribution or loan repayment"""
-    try:
-        amount = transaction.get('amount', 0)
-        
-        # Check if user has any outstanding loans
-        outstanding_loans = Loan.query.filter_by(
-            user_id=user.id,
-            status='approved'
-        ).filter(Loan.unpaid_balance > 0).all()
-        
-        # Check if user already contributed this month
-        today = date.today()
-        current_month = today.replace(day=1)
-        existing_contribution = Contribution.query.filter_by(
-            user_id=user.id,
-            month=current_month
-        ).first()
-        
-        # Logic to determine transaction type
-        if outstanding_loans and existing_contribution:
-            # User has both outstanding loans and has contributed this month
-            # Default to loan repayment for additional payments
-            logger.info("🤔 User has both loans and contribution - defaulting to loan repayment")
-            return 'loan_repayment'
-        elif outstanding_loans and not existing_contribution:
-            # User has loans but no contribution this month
-            # Typical contribution amounts vs loan repayment amounts
-            if amount <= 5000:  # Typical contribution range
-                logger.info("🤔 Amount suggests contribution")
-                return 'contribution'
-            else:
-                logger.info("🤔 Amount suggests loan repayment")
-                return 'loan_repayment'
-        elif not existing_contribution:
-            # No contribution this month, default to contribution
-            logger.info("🤔 No contribution this month - defaulting to contribution")
-            return 'contribution'
-        else:
-            # Has contribution, must be loan repayment
-            logger.info("🤔 Already contributed this month - defaulting to loan repayment")
-            return 'loan_repayment'
+            logger.error(f"❌ Callback processing failed: {result.get('error')}")
+            return jsonify({
+                "ResultCode": 1,
+                "ResultDesc": "Processing failed"
+            }), 200
             
     except Exception as e:
-        logger.error(f"❌ Error determining transaction type: {str(e)}")
-        return 'contribution'  # Default to contribution
-
-def process_contribution_payment(user, amount, receipt_number, transaction):
-    """Process a contribution payment"""
-    try:
-        today = date.today()
-        current_month = today.replace(day=1)
-        
-        # Check if contribution already exists (prevent duplicates)
-        existing_contribution = Contribution.query.filter_by(
-            user_id=user.id,
-            month=current_month
-        ).first()
-        
-        if existing_contribution:
-            logger.warning(f"⚠️ Contribution already exists for {user.username} in {current_month.strftime('%B %Y')}")
-            return False, None
-        
-        # Create contribution record
-        contribution = Contribution(
-            user_id=user.id,
-            amount=amount,
-            month=current_month,
-            payment_method='mpesa',
-            transaction_id=receipt_number
-        )
-        
-        db.session.add(contribution)
-        db.session.commit()
-        
-        logger.info(f"✅ Created contribution: ID {contribution.id}, Amount: KES {amount}")
-        logger.info(f"🎉 Contribution successful: {user.first_name} {user.last_name} - KES {amount:,.2f}")
-        
-        return True, contribution.id
-        
-    except Exception as e:
-        db.session.rollback()
-        logger.error(f"❌ Error processing contribution payment: {str(e)}")
+        logger.error(f"❌ Critical error in callback processing: {str(e)}")
         logger.error(traceback.format_exc())
-        return False, None
-
-def process_loan_repayment(user, amount, receipt_number, transaction, specific_loan_id=None):
-    """Process a loan repayment payment"""
-    try:
-        # Find the specific loan or the one with highest unpaid balance
-        if specific_loan_id:
-            loan = Loan.query.filter_by(
-                id=specific_loan_id,
-                user_id=user.id,
-                status='approved'
-            ).filter(Loan.unpaid_balance > 0).first()
-        else:
-            # Find the loan with the highest unpaid balance (FIFO approach)
-            loan = Loan.query.filter_by(
-                user_id=user.id,
-                status='approved'
-            ).filter(Loan.unpaid_balance > 0).order_by(Loan.borrowed_date.asc()).first()
-        
-        if not loan:
-            logger.warning(f"⚠️ No outstanding loans found for {user.username}")
-            return False, None
-        
-        # Validate payment amount
-        if amount > loan.unpaid_balance:
-            logger.warning(f"⚠️ Payment amount {amount} exceeds loan balance {loan.unpaid_balance}")
-            # Process partial payment up to the loan balance
-            amount = loan.unpaid_balance
-        
-        # Create payment record
-        payment = LoanPayment(
-            loan_id=loan.id,
-            amount=amount,
-            payment_date=datetime.now(),
-            payment_method='mpesa',
-            transaction_id=receipt_number
-        )
-        
-        # Update loan
-        loan.paid_amount += amount
-        loan.unpaid_balance = max(0, loan.amount_due - loan.paid_amount)
-        
-        if loan.unpaid_balance == 0:
-            loan.status = 'paid'
-            loan.paid_date = datetime.now()
-            logger.info(f"🎉 Loan #{loan.id} fully paid!")
-        
-        db.session.add(payment)
-        db.session.commit()
-        
-        logger.info(f"✅ Created loan payment: ID {payment.id}, Amount: KES {amount}")
-        logger.info(f"💳 Loan repayment successful: {user.first_name} {user.last_name} - KES {amount:,.2f}")
-        logger.info(f"📊 Loan #{loan.id} balance: KES {loan.unpaid_balance:,.2f}")
-        
-        return True, payment.id
-        
-    except Exception as e:
-        db.session.rollback()
-        logger.error(f"❌ Error processing loan repayment: {str(e)}")
-        logger.error(traceback.format_exc())
-        return False, None
+        return jsonify({
+            "ResultCode": 1,
+            "ResultDesc": "Internal error"
+        }), 200
 
 @mpesa_bp.route('/validation', methods=['POST'])
 def mpesa_validation():
-    """M-PESA validation endpoint - validates transactions before processing"""
+    """M-PESA validation endpoint - validates incoming transactions"""
     try:
         logger.info("🔍 M-PESA validation request received")
         validation_data = request.get_json()
         logger.info(f"📥 Validation data: {json.dumps(validation_data, indent=2)}")
         
-        # Extract validation details
+        # Extract validation data
         trans_type = validation_data.get('TransType')
         trans_id = validation_data.get('TransID')
-        trans_amount = validation_data.get('TransAmount')
-        bill_ref_number = validation_data.get('BillRefNumber')
-        msisdn = validation_data.get('MSISDN')
+        trans_time = validation_data.get('TransTime')
+        trans_amount = validation_data.get('TransAmount', 0)
+        business_short_code = validation_data.get('BusinessShortCode')
+        bill_ref_number = validation_data.get('BillRefNumber', '')
+        invoice_number = validation_data.get('InvoiceNumber', '')
+        org_account_balance = validation_data.get('OrgAccountBalance')
+        third_party_trans_id = validation_data.get('ThirdPartyTransID', '')
+        msisdn = validation_data.get('MSISDN', '')
+        first_name = validation_data.get('FirstName', '')
+        middle_name = validation_data.get('MiddleName', '')
+        last_name = validation_data.get('LastName', '')
         
-        logger.info(f"🔍 Validating transaction:")
+        logger.info(f"🔍 Validation details:")
         logger.info(f"   Type: {trans_type}")
-        logger.info(f"   ID: {trans_id}")
         logger.info(f"   Amount: {trans_amount}")
-        logger.info(f"   Reference: {bill_ref_number}")
         logger.info(f"   Phone: {msisdn}")
+        logger.info(f"   Reference: {bill_ref_number}")
         
-        # Basic validation rules
-        if not trans_amount or float(trans_amount) < 1:
+        # Basic validation checks
+        if not trans_amount or float(trans_amount) <= 0:
             logger.warning("❌ Validation failed: Invalid amount")
             return jsonify({
                 "ResultCode": "C2B00011",
@@ -716,6 +342,9 @@ def mpesa_validation():
                 "ResultCode": "C2B00011",
                 "ResultDesc": "Amount exceeds maximum limit"
             }), 200
+        
+        # Additional validation can be added here
+        # For now, accept all valid transactions
         
         logger.info("✅ Validation passed")
         return jsonify({
@@ -755,7 +384,226 @@ def mpesa_confirmation():
             "ResultDesc": "Invalid request"
         }), 200
 
-# Development and testing endpoints
+# ============= STATUS AND QUERY ENDPOINTS =============
+
+@mpesa_bp.route('/payment-status/<checkout_request_id>', methods=['GET'])
+@jwt_required()
+def get_payment_status(checkout_request_id):
+    """Get payment status for a specific checkout request"""
+    try:
+        current_user_id = get_jwt_identity()
+        user_id = int(current_user_id) if isinstance(current_user_id, str) else current_user_id
+        
+        # Find payment status
+        payment_status = PaymentStatus.query.filter_by(
+            checkout_request_id=checkout_request_id,
+            user_id=user_id
+        ).first()
+        
+        if not payment_status:
+            return jsonify({"error": "Payment status not found"}), 404
+        
+        return jsonify({
+            "success": True,
+            "payment_status": payment_status.to_dict()
+        }), 200
+        
+    except Exception as e:
+        logger.error(f"❌ Error getting payment status: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
+@mpesa_bp.route('/payment-history', methods=['GET'])
+@jwt_required()
+def get_payment_history():
+    """Get user's M-PESA payment history"""
+    try:
+        current_user_id = get_jwt_identity()
+        user_id = int(current_user_id) if isinstance(current_user_id, str) else current_user_id
+        
+        # Get query parameters for pagination and filtering
+        page = request.args.get('page', 1, type=int)
+        per_page = request.args.get('per_page', 10, type=int)
+        transaction_type = request.args.get('type')  # contribution or loan_repayment
+        status = request.args.get('status')  # pending, success, failed
+        
+        # Build query
+        query = PaymentStatus.query.filter_by(user_id=user_id)
+        
+        if transaction_type:
+            query = query.filter_by(transaction_type=transaction_type)
+        if status:
+            query = query.filter_by(status=status)
+        
+        # Order by most recent first
+        query = query.order_by(PaymentStatus.created_at.desc())
+        
+        # Paginate
+        pagination = query.paginate(
+            page=page,
+            per_page=per_page,
+            error_out=False
+        )
+        
+        return jsonify({
+            "success": True,
+            "payments": [payment.to_dict() for payment in pagination.items],
+            "pagination": {
+                "page": page,
+                "per_page": per_page,
+                "total": pagination.total,
+                "pages": pagination.pages,
+                "has_next": pagination.has_next,
+                "has_prev": pagination.has_prev
+            }
+        }), 200
+        
+    except Exception as e:
+        logger.error(f"❌ Error getting payment history: {str(e)}")
+        return jsonify({"error": "Internal server error"}), 500
+
+@mpesa_bp.route('/user-payments', methods=['GET'])
+@jwt_required()
+def get_user_payments():
+    """Get all pending payments for current user"""
+    try:
+        current_user_id = get_jwt_identity()
+        user_id = int(current_user_id) if isinstance(current_user_id, str) else current_user_id
+        
+        # Get pending payments
+        pending_payments = PaymentStatus.query.filter_by(
+            user_id=user_id,
+            status='pending'
+        ).all()
+        
+        return jsonify({
+            "pending_payments": [payment.to_dict() for payment in pending_payments]
+        }), 200
+        
+    except Exception as e:
+        logger.error(f"❌ Error getting user payments: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
+# ============= ADMIN ENDPOINTS =============
+
+@mpesa_bp.route('/admin/payment-status', methods=['GET'])
+@jwt_required()
+def admin_get_all_payments():
+    """Get all M-PESA payments (admin only)"""
+    try:
+        current_user_id = int(get_jwt_identity())
+        
+        # Check if user is admin
+        user = User.query.get(current_user_id)
+        if not user or not user.is_admin:
+            return jsonify({"error": "Admin access required"}), 403
+        
+        # Get query parameters
+        page = request.args.get('page', 1, type=int)
+        per_page = request.args.get('per_page', 20, type=int)
+        status = request.args.get('status')
+        transaction_type = request.args.get('type')
+        
+        # Build query
+        query = PaymentStatus.query
+        
+        if status:
+            query = query.filter_by(status=status)
+        if transaction_type:
+            query = query.filter_by(transaction_type=transaction_type)
+        
+        # Order by most recent first
+        query = query.order_by(PaymentStatus.created_at.desc())
+        
+        # Paginate
+        pagination = query.paginate(
+            page=page,
+            per_page=per_page,
+            error_out=False
+        )
+        
+        # Include user information in response
+        payments_data = []
+        for payment in pagination.items:
+            payment_dict = payment.to_dict()
+            if payment.user:
+                payment_dict['user'] = {
+                    'id': payment.user.id,
+                    'username': payment.user.username,
+                    'first_name': payment.user.first_name,
+                    'last_name': payment.user.last_name
+                }
+            payments_data.append(payment_dict)
+        
+        return jsonify({
+            "success": True,
+            "payments": payments_data,
+            "pagination": {
+                "page": page,
+                "per_page": per_page,
+                "total": pagination.total,
+                "pages": pagination.pages,
+                "has_next": pagination.has_next,
+                "has_prev": pagination.has_prev
+            }
+        }), 200
+        
+    except Exception as e:
+        logger.error(f"❌ Error getting admin payments: {str(e)}")
+        return jsonify({"error": "Internal server error"}), 500
+
+# ============= TESTING AND DEBUG ENDPOINTS =============
+
+@mpesa_bp.route('/test-payment', methods=['POST'])
+@jwt_required()
+def test_payment():
+    """Test M-PESA payment in test mode"""
+    try:
+        if not current_app.config.get('MPESA_TEST_MODE'):
+            return jsonify({"error": "Test mode not enabled"}), 400
+        
+        current_user_id = int(get_jwt_identity())
+        data = request.get_json()
+        
+        # Validate input
+        transaction_type = data.get('type', 'contribution')  # contribution or loan_repayment
+        amount = data.get('amount', 100)
+        
+        if transaction_type not in ['contribution', 'loan_repayment']:
+            return jsonify({"error": "Invalid transaction type"}), 400
+        
+        user = User.query.get(current_user_id)
+        if not user:
+            return jsonify({"error": "User not found"}), 404
+        
+        logger.info(f"🧪 Test payment: User={user.username}, Type={transaction_type}, Amount={amount}")
+        
+        if transaction_type == 'contribution':
+            account_reference = f"TEST-CONTRIB-{current_user_id}"
+            transaction_desc = "Test contribution"
+        else:
+            # For loan repayment test, use the first approved loan
+            loan = Loan.query.filter_by(user_id=current_user_id, status='approved').first()
+            if not loan:
+                return jsonify({"error": "No approved loans found for testing"}), 400
+            
+            account_reference = f"TEST-LOAN-{loan.id}"
+            transaction_desc = f"Test loan payment"
+        
+        result = initiate_stk_push(
+            phone_number=user.phone_number,
+            amount=amount,
+            account_reference=account_reference,
+            transaction_desc=transaction_desc,
+            transaction_type=transaction_type,
+            user_id=current_user_id
+        )
+        
+        return jsonify(result), 200 if result.get('success') else 400
+        
+    except Exception as e:
+        logger.error(f"❌ Error in test payment: {str(e)}")
+        return jsonify({"error": "Internal server error"}), 500
+
 @mpesa_bp.route('/test-contribution', methods=['POST'])
 @jwt_required()
 def test_contribution():
@@ -775,7 +623,6 @@ def test_contribution():
         amount = float(data.get('amount', 2000))
         
         # Simulate successful callback
-        from ..services.daraja_service import simulate_callback_response
         callback_data = simulate_callback_response(
             success=True, 
             amount=amount, 
@@ -786,21 +633,12 @@ def test_contribution():
         result = process_callback(callback_data)
         
         if result['success']:
-            transaction = result['transaction']
-            success, related_id = process_contribution_payment(
-                user, 
-                transaction['amount'], 
-                transaction['receipt_number'], 
-                transaction
-            )
-            
-            if success:
-                return jsonify({
-                    "message": "Test contribution created successfully",
-                    "test_mode": True,
-                    "transaction": transaction,
-                    "contribution_id": related_id
-                }), 201
+            return jsonify({
+                "message": "Test contribution created successfully",
+                "test_mode": True,
+                "transaction": result,
+                "amount": amount
+            }), 201
         
         return jsonify({"error": "Failed to create test contribution"}), 500
         
@@ -824,11 +662,20 @@ def test_loan_repayment():
         if not user:
             return jsonify({"error": "User not found"}), 404
         
-        amount = float(data.get('amount', 1000))
         loan_id = data.get('loan_id')
+        amount = float(data.get('amount', 1000))
+        
+        if loan_id:
+            loan = Loan.query.get(loan_id)
+            if not loan or loan.user_id != user_id:
+                return jsonify({"error": "Invalid loan"}), 400
+        else:
+            # Use first approved loan
+            loan = Loan.query.filter_by(user_id=user_id, status='approved').first()
+            if not loan:
+                return jsonify({"error": "No approved loans found"}), 400
         
         # Simulate successful callback
-        from ..services.daraja_service import simulate_callback_response
         callback_data = simulate_callback_response(
             success=True, 
             amount=amount, 
@@ -839,22 +686,13 @@ def test_loan_repayment():
         result = process_callback(callback_data)
         
         if result['success']:
-            transaction = result['transaction']
-            success, related_id = process_loan_repayment(
-                user, 
-                transaction['amount'], 
-                transaction['receipt_number'], 
-                transaction,
-                loan_id
-            )
-            
-            if success:
-                return jsonify({
-                    "message": "Test loan repayment created successfully",
-                    "test_mode": True,
-                    "transaction": transaction,
-                    "payment_id": related_id
-                }), 201
+            return jsonify({
+                "message": "Test loan repayment created successfully",
+                "test_mode": True,
+                "transaction": result,
+                "loan_id": loan.id,
+                "amount": amount
+            }), 201
         
         return jsonify({"error": "Failed to create test loan repayment"}), 500
         
@@ -875,7 +713,6 @@ def simulate_callback():
         phone = data.get('phone', '254708374149')
         
         # Generate simulated callback
-        from ..services.daraja_service import simulate_callback_response
         callback_data = simulate_callback_response(success=success, amount=amount, phone=phone)
         
         # Process the callback
@@ -896,10 +733,27 @@ def simulate_callback():
 def cleanup_old_payments():
     """Cleanup old payment status records (admin only)"""
     try:
-        # This should ideally be admin-only, but for simplicity allowing any authenticated user
+        current_user_id = int(get_jwt_identity())
+        
+        # Check if user is admin
+        user = User.query.get(current_user_id)
+        if not user or not user.is_admin:
+            return jsonify({"error": "Admin access required"}), 403
+        
         days = request.json.get('days', 7) if request.json else 7
         
-        count = PaymentStatus.cleanup_old_records(days=days)
+        # Delete old payment records
+        cutoff_date = datetime.utcnow() - timedelta(days=days)
+        old_payments = PaymentStatus.query.filter(
+            PaymentStatus.created_at < cutoff_date,
+            PaymentStatus.status.in_(['failed', 'timeout'])
+        ).all()
+        
+        count = len(old_payments)
+        for payment in old_payments:
+            db.session.delete(payment)
+        
+        db.session.commit()
         
         return jsonify({
             "message": f"Cleaned up {count} old payment records older than {days} days"
@@ -908,3 +762,154 @@ def cleanup_old_payments():
     except Exception as e:
         logger.error(f"❌ Cleanup error: {str(e)}")
         return jsonify({"error": str(e)}), 500
+
+@mpesa_bp.route('/config-status', methods=['GET'])
+def mpesa_config_status():
+    """Get M-PESA configuration status"""
+    try:
+        config_status = {
+            "mpesa_configured": bool(current_app.config.get('MPESA_CONSUMER_KEY')),
+            "environment": "production" if current_app.config.get('MPESA_PRODUCTION') else "sandbox",
+            "test_mode": current_app.config.get('MPESA_TEST_MODE', False),
+            "shortcode": current_app.config.get('MPESA_SHORTCODE'),
+            "callback_url_configured": bool(current_app.config.get('MPESA_CALLBACK_URL')) and 'example.com' not in current_app.config.get('MPESA_CALLBACK_URL', ''),
+            "ngrok_detected": 'ngrok' in current_app.config.get('MPESA_CALLBACK_URL', ''),
+            "auth_url": current_app.config.get('MPESA_AUTH_URL'),
+            "stk_push_url": current_app.config.get('MPESA_STK_PUSH_URL')
+        }
+        
+        return jsonify(config_status), 200
+        
+    except Exception as e:
+        logger.error(f"❌ Error getting config status: {str(e)}")
+        return jsonify({"error": "Internal server error"}), 500
+
+# ============= LEGACY ENDPOINTS (for backward compatibility) =============
+
+@mpesa_bp.route('/status', methods=['GET'])
+def mpesa_status():
+    """Legacy status endpoint - redirects to config-status"""
+    return mpesa_config_status()
+
+# ============= UTILITY FUNCTIONS =============
+
+def process_contribution_payment(user, amount, receipt_number, transaction_details):
+    """
+    Process contribution payment and handle overpayments
+    Legacy function for backward compatibility
+    """
+    try:
+        logger.info(f"💰 Processing contribution payment: User={user.username}, Amount={amount}")
+        
+        # Expected contribution amount (configurable)
+        expected_amount = 3000
+        
+        # Check for overpayment
+        if amount > expected_amount:
+            overpayment_amount = amount - expected_amount
+            
+            # Create overpayment record
+            from ..models.overpayment import Overpayment
+            overpayment = Overpayment(
+                user_id=user.id,
+                original_payment_type='contribution',
+                expected_amount=expected_amount,
+                actual_amount=amount,
+                overpayment_amount=overpayment_amount,
+                remaining_amount=overpayment_amount
+            )
+            db.session.add(overpayment)
+            
+            # Use only expected amount for contribution
+            contribution_amount = expected_amount
+            logger.info(f"⚠️ Overpayment detected: {overpayment_amount} KES")
+        else:
+            contribution_amount = amount
+        
+        # Create contribution record
+        contribution = Contribution(
+            user_id=user.id,
+            amount=contribution_amount,
+            month=datetime.now().date().replace(day=1),
+            payment_method='mpesa',
+            transaction_id=receipt_number
+        )
+        
+        db.session.add(contribution)
+        db.session.commit()
+        
+        logger.info(f"✅ Contribution processed: User={user.username}, Amount={contribution_amount}")
+        
+        return True, contribution.id
+        
+    except Exception as e:
+        db.session.rollback()
+        logger.error(f"❌ Error processing contribution: {str(e)}")
+        return False, None
+
+def process_loan_payment(user, loan_id, amount, receipt_number, transaction_details):
+    """
+    Process loan payment and handle overpayments
+    Legacy function for backward compatibility
+    """
+    try:
+        logger.info(f"🏦 Processing loan payment: User={user.username}, Loan={loan_id}, Amount={amount}")
+        
+        loan = Loan.query.get(loan_id)
+        if not loan or loan.user_id != user.id:
+            logger.error(f"❌ Invalid loan: {loan_id} for user {user.id}")
+            return False, None
+        
+        # Calculate remaining balance
+        remaining_balance = loan.unpaid_balance or (loan.amount_due - loan.paid_amount)
+        
+        # Check for overpayment
+        if amount > remaining_balance:
+            overpayment_amount = amount - remaining_balance
+            
+            # Create overpayment record
+            from ..models.overpayment import Overpayment
+            overpayment = Overpayment(
+                user_id=user.id,
+                original_payment_type='loan_payment',
+                expected_amount=remaining_balance,
+                actual_amount=amount,
+                overpayment_amount=overpayment_amount,
+                remaining_amount=overpayment_amount
+            )
+            db.session.add(overpayment)
+            
+            # Use only remaining balance for loan payment
+            payment_amount = remaining_balance
+            logger.info(f"⚠️ Loan overpayment detected: {overpayment_amount} KES")
+        else:
+            payment_amount = amount
+        
+        # Create loan payment record
+        loan_payment = LoanPayment(
+            loan_id=loan.id,
+            amount=payment_amount,
+            payment_method='mpesa',
+            transaction_id=receipt_number
+        )
+        
+        db.session.add(loan_payment)
+        
+        # Update loan
+        loan.paid_amount += payment_amount
+        loan.unpaid_balance = max(0, loan.unpaid_balance - payment_amount)
+        
+        if loan.unpaid_balance <= 0:
+            loan.status = 'paid'
+            loan.paid_date = datetime.utcnow()
+        
+        db.session.commit()
+        
+        logger.info(f"✅ Loan payment processed: User={user.username}, Loan={loan.id}, Amount={payment_amount}")
+        
+        return True, loan_payment.id
+        
+    except Exception as e:
+        db.session.rollback()
+        logger.error(f"❌ Error processing loan payment: {str(e)}")
+        return False, None

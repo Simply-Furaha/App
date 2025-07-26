@@ -1,3 +1,4 @@
+# app/models/__init__.py
 
 from flask_sqlalchemy import SQLAlchemy
 
@@ -10,6 +11,8 @@ from .loan import Loan, LoanPayment
 from .investment import ExternalInvestment
 from .otp import OTP
 from .payment_status import PaymentStatus
+from .admin_log import AdminActivityLog
+from .overpayment import Overpayment
 
 # Make models available at package level
 __all__ = [
@@ -20,5 +23,7 @@ __all__ = [
     'LoanPayment',
     'ExternalInvestment',
     'OTP',
-    'PaymentStatus'
+    'PaymentStatus',
+    'AdminActivityLog',
+    'Overpayment'
 ]

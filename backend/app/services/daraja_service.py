@@ -1,3 +1,4 @@
+# app/services/daraja_service.py - ENHANCED VERSION (Replace your existing file)
 import requests
 import base64
 import json
@@ -7,6 +8,12 @@ import logging
 import traceback
 import time
 import hashlib
+from ..models import db
+from ..models.user import User
+from ..models.contribution import Contribution
+from ..models.loan import Loan, LoanPayment
+from ..models.payment_status import PaymentStatus
+from ..models.overpayment import Overpayment
 
 logger = logging.getLogger(__name__)
 
@@ -23,19 +30,18 @@ def get_auth_token():
         if (_token_cache['token'] and 
             _token_cache['expires_at'] and 
             datetime.now().timestamp() < _token_cache['expires_at']):
-            logger.info("Using cached Daraja auth token")
+            logger.info("✅ Using cached Daraja auth token")
             return _token_cache['token']
         
         consumer_key = current_app.config['MPESA_CONSUMER_KEY']
         consumer_secret = current_app.config['MPESA_CONSUMER_SECRET']
         
         if not consumer_key or not consumer_secret:
-            logger.error("Missing MPESA_CONSUMER_KEY or MPESA_CONSUMER_SECRET in configuration")
+            logger.error("❌ Missing MPESA_CONSUMER_KEY or MPESA_CONSUMER_SECRET")
             return None
         
-        # Use the URL from config
         url = current_app.config['MPESA_AUTH_URL']
-        logger.info(f"Getting Daraja auth token from: {url}")
+        logger.info(f"🔑 Getting Daraja auth token from: {url}")
         
         # Create the auth string and encode it to base64
         auth_string = f"{consumer_key}:{consumer_secret}"
@@ -46,56 +52,59 @@ def get_auth_token():
             "Content-Type": "application/json"
         }
         
+        # Check for test mode
+        if current_app.config.get('MPESA_TEST_MODE'):
+            logger.info("🧪 M-PESA Test Mode: Simulating auth token")
+            _token_cache['token'] = "test_token_12345"
+            _token_cache['expires_at'] = datetime.now().timestamp() + 3600
+            return _token_cache['token']
+        
         response = requests.get(url, headers=headers, timeout=30)
         response.raise_for_status()
         
         result = response.json()
         token = result.get('access_token')
-        expires_in = result.get('expires_in', 3599)  # Default to ~1 hour
+        expires_in = result.get('expires_in', 3599)
         
         if not token:
-            logger.error(f"Invalid token response: {result}")
+            logger.error(f"❌ Invalid token response: {result}")
             return None
         
         # Cache the token (subtract 60 seconds for safety margin)
         _token_cache['token'] = token
         _token_cache['expires_at'] = datetime.now().timestamp() + expires_in - 60
         
-        logger.info("Successfully obtained and cached Daraja auth token")
+        logger.info("✅ Successfully obtained Daraja auth token")
         return token
         
-    except requests.exceptions.RequestException as e:
-        logger.error(f"Network error getting auth token: {str(e)}")
+    except requests.RequestException as e:
+        logger.error(f"❌ Network error getting auth token: {str(e)}")
         return None
     except Exception as e:
-        logger.error(f"Error getting auth token: {str(e)}")
-        logger.error(traceback.format_exc())
+        logger.error(f"❌ Error getting auth token: {str(e)}")
         return None
 
 def format_phone_number(phone_number):
-    """Format phone number to 254XXXXXXXXX format with validation"""
+    """Format phone number to 254XXXXXXXXX format"""
     try:
-        # Remove any whitespace and special characters
-        phone = str(phone_number).strip().replace(' ', '').replace('-', '').replace('(', '').replace(')', '')
+        # Remove any non-digit characters
+        phone = ''.join(filter(str.isdigit, str(phone_number)))
         
-        # Remove the plus sign if present
-        if phone.startswith('+'):
-            phone = phone[1:]
-        
-        # If it starts with 0, replace with 254
-        if phone.startswith('0'):
+        # Handle different input formats
+        if phone.startswith('254'):
+            phone = phone
+        elif phone.startswith('0'):
             phone = '254' + phone[1:]
-        
-        # If it doesn't start with 254, add it (assuming Kenya)
-        if not phone.startswith('254'):
+        elif phone.startswith('7') or phone.startswith('1'):
             phone = '254' + phone
+        else:
+            raise ValueError(f"Invalid phone number format: {phone_number}")
         
-        # Validate format - should be exactly 12 digits for Kenya
-        if not phone.isdigit() or len(phone) != 12:
-            logger.warning(f"Invalid phone number format: {phone}")
-            raise ValueError(f"Invalid phone number format: {phone}")
+        # Validate length (should be 12 digits for Kenyan numbers)
+        if len(phone) != 12:
+            raise ValueError(f"Invalid phone number length: {phone}")
         
-        # Additional validation - check if it's a valid Kenyan mobile number
+        # Validate Kenyan mobile prefixes
         valid_prefixes = ['254701', '254702', '254703', '254704', '254705', '254706', '254707', '254708', '254709',
                          '254710', '254711', '254712', '254713', '254714', '254715', '254716', '254717', '254718', '254719',
                          '254720', '254721', '254722', '254723', '254724', '254725', '254726', '254727', '254728', '254729',
@@ -105,13 +114,13 @@ def format_phone_number(phone_number):
                          '254768', '254769', '254790', '254791', '254792', '254793', '254794', '254795', '254796', '254797', '254798', '254799']
         
         if not any(phone.startswith(prefix) for prefix in valid_prefixes):
-            logger.warning(f"Phone number may not be a valid Kenyan mobile number: {phone}")
+            logger.warning(f"⚠️ Phone number may not be a valid Kenyan mobile: {phone}")
         
-        logger.info(f"Formatted phone number: {phone}")
+        logger.info(f"📱 Formatted phone number: {phone}")
         return phone
         
     except Exception as e:
-        logger.error(f"Error formatting phone number {phone_number}: {str(e)}")
+        logger.error(f"❌ Error formatting phone number {phone_number}: {str(e)}")
         raise ValueError(f"Invalid phone number: {phone_number}")
 
 def generate_password(shortcode, passkey, timestamp):
@@ -121,12 +130,12 @@ def generate_password(shortcode, passkey, timestamp):
         password = base64.b64encode(password_string.encode()).decode('utf-8')
         return password
     except Exception as e:
-        logger.error(f"Error generating password: {str(e)}")
+        logger.error(f"❌ Error generating password: {str(e)}")
         raise
 
-def initiate_stk_push(phone_number, amount, account_reference, transaction_desc, transaction_type="contribution"):
+def initiate_stk_push(phone_number, amount, account_reference, transaction_desc, transaction_type="contribution", user_id=None):
     """
-    Initiate STK push to customer's phone
+    Initiate STK push to customer's phone - ENHANCED VERSION
     
     Args:
         phone_number: Customer's phone number
@@ -134,6 +143,7 @@ def initiate_stk_push(phone_number, amount, account_reference, transaction_desc,
         account_reference: Reference for the transaction
         transaction_desc: Description of the transaction
         transaction_type: Type of transaction (contribution, loan_repayment)
+        user_id: User ID for tracking
         
     Returns:
         dict: Response from M-Pesa API
@@ -143,7 +153,7 @@ def initiate_stk_push(phone_number, amount, account_reference, transaction_desc,
         
         token = get_auth_token()
         if not token:
-            return {"error": "Could not get authentication token"}
+            return {"success": False, "error": "Could not get authentication token"}
         
         # Get configuration values
         shortcode = current_app.config['MPESA_SHORTCODE']
@@ -151,8 +161,8 @@ def initiate_stk_push(phone_number, amount, account_reference, transaction_desc,
         callback_url = current_app.config['MPESA_CALLBACK_URL']
         
         if not all([shortcode, passkey, callback_url]):
-            logger.error("Missing required MPESA configuration")
-            return {"error": "Missing required MPESA configuration"}
+            logger.error("❌ Missing required MPESA configuration")
+            return {"success": False, "error": "Missing required MPESA configuration"}
         
         # Format timestamp for the API (YYYYMMDDHHmmss)
         timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
@@ -164,17 +174,45 @@ def initiate_stk_push(phone_number, amount, account_reference, transaction_desc,
         try:
             formatted_phone = format_phone_number(phone_number)
         except ValueError as e:
-            return {"error": str(e)}
+            return {"success": False, "error": str(e)}
         
         # Ensure amount is integer and within limits
         try:
             amount_int = int(float(amount))
             if amount_int < 1:
-                return {"error": "Minimum amount is KES 1"}
+                return {"success": False, "error": "Minimum amount is KES 1"}
             if amount_int > 70000:
-                return {"error": "Maximum amount is KES 70,000"}
+                return {"success": False, "error": "Maximum amount is KES 70,000"}
         except (ValueError, TypeError):
-            return {"error": "Invalid amount format"}
+            return {"success": False, "error": "Invalid amount format"}
+        
+        # Generate unique checkout request ID
+        checkout_request_id = f"NINEFUND-{transaction_type.upper()}-{int(time.time())}"
+        if user_id:
+            checkout_request_id += f"-{user_id}"
+        
+        # Create payment status record for tracking
+        if user_id:
+            payment_status = PaymentStatus(
+                checkout_request_id=checkout_request_id,
+                user_id=user_id,
+                transaction_type=transaction_type,
+                amount=amount_int,
+                phone_number=formatted_phone,
+                status='pending'
+            )
+            db.session.add(payment_status)
+            db.session.commit()
+        
+        # Check for test mode
+        if current_app.config.get('MPESA_TEST_MODE'):
+            logger.info("🧪 M-PESA Test Mode: Simulating STK push")
+            return {
+                "success": True,
+                "checkout_request_id": checkout_request_id,
+                "merchant_request_id": f"test-merchant-{int(time.time())}",
+                "message": "STK push initiated successfully (TEST MODE)"
+            }
         
         # Select the appropriate URL
         url = current_app.config['MPESA_STK_PUSH_URL']
@@ -184,6 +222,7 @@ def initiate_stk_push(phone_number, amount, account_reference, transaction_desc,
         logger.info(f"   Phone: {formatted_phone}")
         logger.info(f"   Amount: {amount_int}")
         logger.info(f"   Reference: {account_reference}")
+        logger.info(f"   Type: {transaction_type}")
         
         headers = {
             "Authorization": f"Bearer {token}",
@@ -207,134 +246,51 @@ def initiate_stk_push(phone_number, amount, account_reference, transaction_desc,
         
         logger.info(f"📤 STK push payload: {json.dumps(payload, indent=2)}")
         
-        # Make the request with retry logic
-        max_retries = 3
-        for attempt in range(max_retries):
-            try:
-                response = requests.post(url, json=payload, headers=headers, timeout=60)
-                
-                logger.info(f"📥 STK push response (attempt {attempt + 1}):")
-                logger.info(f"   Status: {response.status_code}")
-                logger.info(f"   Response: {response.text}")
-                
-                if response.status_code == 200:
-                    result = response.json()
-                    
-                    # Check if the response indicates success
-                    if result.get('ResponseCode') == '0':
-                        logger.info("✅ STK push initiated successfully")
-                        return result
-                    else:
-                        error_msg = result.get('ResponseDescription', 'STK push failed')
-                        logger.error(f"❌ STK push failed: {error_msg}")
-                        return {"error": error_msg}
-                
-                elif response.status_code == 401:
-                    logger.warning("🔄 Token expired, clearing cache and retrying...")
-                    _token_cache['token'] = None
-                    _token_cache['expires_at'] = None
-                    
-                    if attempt < max_retries - 1:
-                        time.sleep(2)
-                        continue
-                    else:
-                        return {"error": "Authentication failed"}
-                
-                else:
-                    error_msg = f"Request failed with status {response.status_code}: {response.text}"
-                    logger.error(f"❌ {error_msg}")
-                    return {"error": error_msg}
-                
-            except requests.exceptions.Timeout:
-                logger.warning(f"⏰ Request timeout (attempt {attempt + 1})")
-                if attempt < max_retries - 1:
-                    time.sleep(5)
-                    continue
-                else:
-                    return {"error": "Request timeout. Please try again."}
-            
-            except requests.exceptions.RequestException as e:
-                logger.error(f"🌐 Network error (attempt {attempt + 1}): {str(e)}")
-                if attempt < max_retries - 1:
-                    time.sleep(3)
-                    continue
-                else:
-                    return {"error": f"Network error: {str(e)}"}
-        
-        return {"error": "Maximum retries exceeded"}
-        
-    except Exception as e:
-        logger.error(f"❌ Unexpected error in STK push: {str(e)}")
-        logger.error(traceback.format_exc())
-        return {"error": "An unexpected error occurred"}
-
-def check_stk_push_status(checkout_request_id):
-    """
-    Check the status of an STK push transaction
-    
-    Args:
-        checkout_request_id: The CheckoutRequestID from the STK push response
-        
-    Returns:
-        dict: Response with transaction status
-    """
-    try:
-        logger.info(f"🔍 Checking STK push status for: {checkout_request_id}")
-        
-        token = get_auth_token()
-        if not token:
-            return {"error": "Could not get authentication token"}
-        
-        # Get configuration values
-        shortcode = current_app.config['MPESA_SHORTCODE']
-        passkey = current_app.config['MPESA_PASSKEY']
-        
-        # Format timestamp for the API
-        timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
-        
-        # Generate password
-        password = generate_password(shortcode, passkey, timestamp)
-        
-        # Select the appropriate URL
-        url = current_app.config['MPESA_STK_QUERY_URL']
-        
-        headers = {
-            "Authorization": f"Bearer {token}",
-            "Content-Type": "application/json"
-        }
-        
-        payload = {
-            "BusinessShortCode": shortcode,
-            "Password": password,
-            "Timestamp": timestamp,
-            "CheckoutRequestID": checkout_request_id
-        }
-        
-        logger.info(f"📤 Status check payload: {json.dumps(payload, indent=2)}")
-        
         response = requests.post(url, json=payload, headers=headers, timeout=30)
+        response.raise_for_status()
         
-        logger.info(f"📥 Status check response:")
-        logger.info(f"   Status: {response.status_code}")
-        logger.info(f"   Response: {response.text}")
+        result = response.json()
+        logger.info(f"📥 STK push response: {json.dumps(result, indent=2)}")
         
-        if response.status_code == 200:
-            result = response.json()
-            logger.info("✅ Status check completed successfully")
-            return result
+        # Check if the request was successful
+        response_code = result.get('ResponseCode', '1')
+        if response_code == '0':
+            # Update payment status with response details
+            if user_id and payment_status:
+                payment_status.merchant_request_id = result.get('MerchantRequestID')
+                db.session.commit()
+            
+            logger.info("✅ STK push initiated successfully")
+            return {
+                "success": True,
+                "checkout_request_id": result.get('CheckoutRequestID'),
+                "merchant_request_id": result.get('MerchantRequestID'),
+                "message": result.get('ResponseDescription', 'STK push initiated successfully')
+            }
         else:
-            error_msg = f"Status check failed with status {response.status_code}: {response.text}"
-            logger.error(f"❌ {error_msg}")
-            return {"error": error_msg}
-        
+            # Update payment status to failed
+            if user_id and payment_status:
+                payment_status.status = 'failed'
+                payment_status.failure_reason = result.get('ResponseDescription', 'STK push failed')
+                db.session.commit()
+            
+            logger.error(f"❌ STK push failed: {result}")
+            return {
+                "success": False,
+                "error": result.get('ResponseDescription', 'STK push failed')
+            }
+            
+    except requests.RequestException as e:
+        logger.error(f"❌ Network error during STK push: {str(e)}")
+        return {"success": False, "error": "Network error occurred"}
     except Exception as e:
-        logger.error(f"❌ Error checking STK push status: {str(e)}")
+        logger.error(f"❌ Error during STK push: {str(e)}")
         logger.error(traceback.format_exc())
-        return {"error": str(e)}
+        return {"success": False, "error": str(e)}
 
 def process_callback(callback_data):
     """
-    Process callback data from M-Pesa with enhanced validation
+    Process callback data from M-Pesa with enhanced database integration
     
     Args:
         callback_data: JSON data from M-Pesa callback
@@ -361,81 +317,236 @@ def process_callback(callback_data):
         logger.info(f"   Merchant ID: {merchant_request_id}")
         logger.info(f"   Checkout ID: {checkout_request_id}")
         
+        if not checkout_request_id:
+            logger.error("❌ Missing CheckoutRequestID in callback")
+            return {"success": False, "error": "Missing CheckoutRequestID"}
+        
+        # Find the payment status record
+        payment_status = PaymentStatus.query.filter_by(
+            checkout_request_id=checkout_request_id
+        ).first()
+        
+        if not payment_status:
+            logger.error(f"❌ Payment status not found for checkout ID: {checkout_request_id}")
+            return {"success": False, "error": "Payment record not found"}
+        
+        # Update payment status
+        payment_status.merchant_request_id = merchant_request_id
+        payment_status.completed_at = datetime.utcnow()
+        
         # Check if transaction was successful
-        if result_code != 0:
-            error_messages = {
-                1032: "Transaction cancelled by user",
-                1037: "Transaction timed out",
-                1025: "Transaction failed - insufficient balance",
-                1001: "Transaction failed - invalid phone number",
-                1: "Transaction failed - general error"
-            }
+        if result_code == 0:
+            return process_successful_payment(payment_status, stkCallback)
+        else:
+            return process_failed_payment(payment_status, result_desc)
             
-            error_msg = error_messages.get(result_code, result_desc or "Transaction failed")
-            logger.error(f"❌ Transaction failed: {error_msg}")
-            
-            return {
-                'success': False,
-                'message': error_msg,
-                'result_code': result_code,
-                'merchant_request_id': merchant_request_id,
-                'checkout_request_id': checkout_request_id
-            }
-        
-        # Extract transaction details from successful transaction
-        metadata = stkCallback.get('CallbackMetadata', {})
-        items = metadata.get('Item', [])
-        
-        transaction_details = {
-            'result_code': result_code,
-            'merchant_request_id': merchant_request_id,
-            'checkout_request_id': checkout_request_id
-        }
-        
-        for item in items:
-            name = item.get('Name')
-            value = item.get('Value')
-            
-            if name == 'MpesaReceiptNumber':
-                transaction_details['receipt_number'] = str(value)
-            elif name == 'Amount':
-                transaction_details['amount'] = float(value)
-            elif name == 'TransactionDate':
-                transaction_details['transaction_date'] = value
-                # Parse the transaction date
-                try:
-                    # M-PESA date format: 20231201143045 (YYYYMMDDHHmmss)
-                    if isinstance(value, (int, str)) and len(str(value)) == 14:
-                        date_str = str(value)
-                        parsed_date = datetime.strptime(date_str, '%Y%m%d%H%M%S')
-                        transaction_details['parsed_date'] = parsed_date
-                except Exception as date_error:
-                    logger.warning(f"Could not parse transaction date {value}: {date_error}")
-            elif name == 'PhoneNumber':
-                transaction_details['phone_number'] = str(value)
-        
-        logger.info(f"💰 Processed transaction details: {json.dumps(transaction_details, indent=2, default=str)}")
-        
-        # Validate that we have the essential details
-        required_fields = ['receipt_number', 'amount', 'phone_number']
-        missing_fields = [field for field in required_fields if field not in transaction_details]
-        
-        if missing_fields:
-            logger.error(f"❌ Missing required transaction fields: {missing_fields}")
-            return {
-                'success': False,
-                'message': f"Incomplete transaction data: missing {', '.join(missing_fields)}"
-            }
-        
-        return {
-            'success': True,
-            'transaction': transaction_details
-        }
-        
     except Exception as e:
         logger.error(f"❌ Error processing callback: {str(e)}")
         logger.error(traceback.format_exc())
-        return {'success': False, 'message': str(e)}
+        return {"success": False, "error": str(e)}
+
+def process_successful_payment(payment_status, stk_callback):
+    """Process successful payment and update database"""
+    try:
+        # Extract payment details from callback
+        callback_metadata = stk_callback.get('CallbackMetadata', {}).get('Item', [])
+        payment_details = {}
+        
+        for item in callback_metadata:
+            name = item.get('Name')
+            value = item.get('Value')
+            if name and value is not None:
+                payment_details[name] = value
+        
+        amount = payment_details.get('Amount')
+        mpesa_receipt = payment_details.get('MpesaReceiptNumber')
+        transaction_date = payment_details.get('TransactionDate')
+        phone_number = payment_details.get('PhoneNumber')
+        
+        logger.info(f"💰 Payment successful: Amount={amount}, Receipt={mpesa_receipt}")
+        
+        # Update payment status
+        payment_status.status = 'success'
+        payment_status.mpesa_receipt_number = mpesa_receipt
+        
+        # Process based on transaction type
+        if payment_status.transaction_type == 'contribution':
+            return process_contribution_payment(payment_status, amount, mpesa_receipt)
+        elif payment_status.transaction_type == 'loan_repayment':
+            return process_loan_repayment_payment(payment_status, amount, mpesa_receipt)
+        else:
+            logger.error(f"❌ Unknown transaction type: {payment_status.transaction_type}")
+            return {"success": False, "error": "Unknown transaction type"}
+            
+    except Exception as e:
+        logger.error(f"❌ Error processing successful payment: {str(e)}")
+        return {"success": False, "error": str(e)}
+
+def process_contribution_payment(payment_status, amount, mpesa_receipt):
+    """Process contribution payment with overpayment handling"""
+    try:
+        user = User.query.get(payment_status.user_id)
+        if not user:
+            logger.error(f"❌ User not found: {payment_status.user_id}")
+            return {"success": False, "error": "User not found"}
+        
+        # Expected contribution amount (configurable)
+        expected_amount = 3000  # You can make this configurable
+        
+        # Check for overpayment
+        if amount > expected_amount:
+            overpayment_amount = amount - expected_amount
+            
+            # Create overpayment record
+            overpayment = Overpayment(
+                user_id=user.id,
+                original_payment_type='contribution',
+                expected_amount=expected_amount,
+                actual_amount=amount,
+                overpayment_amount=overpayment_amount,
+                remaining_amount=overpayment_amount
+            )
+            db.session.add(overpayment)
+            
+            # Use only expected amount for contribution
+            contribution_amount = expected_amount
+            logger.info(f"⚠️ Overpayment detected: {overpayment_amount} KES")
+        else:
+            contribution_amount = amount
+        
+        # Create contribution record
+        contribution = Contribution(
+            user_id=user.id,
+            amount=contribution_amount,
+            month=datetime.now().date().replace(day=1),  # First day of current month
+            payment_method='mpesa',
+            transaction_id=mpesa_receipt
+        )
+        
+        db.session.add(contribution)
+        
+        # Link contribution to payment status
+        payment_status.contribution_id = contribution.id
+        
+        db.session.commit()
+        
+        logger.info(f"✅ Contribution processed: User={user.username}, Amount={contribution_amount}")
+        
+        result = {
+            "success": True,
+            "message": f"Contribution of KES {contribution_amount} processed successfully",
+            "contribution_id": contribution.id
+        }
+        
+        if amount > expected_amount:
+            result["overpayment_amount"] = overpayment_amount
+            result["message"] += f". Overpayment of KES {overpayment_amount} recorded."
+        
+        return result
+        
+    except Exception as e:
+        db.session.rollback()
+        logger.error(f"❌ Error processing contribution: {str(e)}")
+        return {"success": False, "error": str(e)}
+
+def process_loan_repayment_payment(payment_status, amount, mpesa_receipt):
+    """Process loan repayment with overpayment handling"""
+    try:
+        loan = Loan.query.get(payment_status.loan_id)
+        if not loan:
+            logger.error(f"❌ Loan not found: {payment_status.loan_id}")
+            return {"success": False, "error": "Loan not found"}
+        
+        user = User.query.get(payment_status.user_id)
+        if not user:
+            logger.error(f"❌ User not found: {payment_status.user_id}")
+            return {"success": False, "error": "User not found"}
+        
+        # Calculate remaining balance
+        remaining_balance = loan.unpaid_balance or (loan.amount_due - loan.paid_amount)
+        
+        # Check for overpayment
+        if amount > remaining_balance:
+            overpayment_amount = amount - remaining_balance
+            
+            # Create overpayment record
+            overpayment = Overpayment(
+                user_id=user.id,
+                original_payment_type='loan_payment',
+                expected_amount=remaining_balance,
+                actual_amount=amount,
+                overpayment_amount=overpayment_amount,
+                remaining_amount=overpayment_amount
+            )
+            db.session.add(overpayment)
+            
+            # Use only remaining balance for loan payment
+            payment_amount = remaining_balance
+            logger.info(f"⚠️ Loan overpayment detected: {overpayment_amount} KES")
+        else:
+            payment_amount = amount
+        
+        # Create loan payment record
+        loan_payment = LoanPayment(
+            loan_id=loan.id,
+            amount=payment_amount,
+            payment_method='mpesa',
+            transaction_id=mpesa_receipt
+        )
+        
+        db.session.add(loan_payment)
+        
+        # Update loan
+        loan.paid_amount += payment_amount
+        loan.unpaid_balance = max(0, loan.unpaid_balance - payment_amount)
+        
+        if loan.unpaid_balance <= 0:
+            loan.status = 'paid'
+            loan.paid_date = datetime.utcnow()
+        
+        # Link payment to payment status
+        payment_status.loan_payment_id = loan_payment.id
+        
+        db.session.commit()
+        
+        logger.info(f"✅ Loan payment processed: User={user.username}, Loan={loan.id}, Amount={payment_amount}")
+        
+        result = {
+            "success": True,
+            "message": f"Loan payment of KES {payment_amount} processed successfully",
+            "loan_payment_id": loan_payment.id,
+            "remaining_balance": loan.unpaid_balance,
+            "loan_status": loan.status
+        }
+        
+        if amount > remaining_balance:
+            result["overpayment_amount"] = overpayment_amount
+            result["message"] += f". Overpayment of KES {overpayment_amount} recorded."
+        
+        return result
+        
+    except Exception as e:
+        db.session.rollback()
+        logger.error(f"❌ Error processing loan payment: {str(e)}")
+        return {"success": False, "error": str(e)}
+
+def process_failed_payment(payment_status, result_desc):
+    """Process failed payment"""
+    try:
+        payment_status.status = 'failed'
+        payment_status.failure_reason = result_desc
+        db.session.commit()
+        
+        logger.info(f"❌ Payment failed: {result_desc}")
+        
+        return {
+            "success": False,
+            "error": f"Payment failed: {result_desc}"
+        }
+        
+    except Exception as e:
+        logger.error(f"❌ Error processing failed payment: {str(e)}")
+        return {"success": False, "error": str(e)}
 
 def validate_callback_security(request):
     """
@@ -444,8 +555,6 @@ def validate_callback_security(request):
     """
     try:
         # Basic validation - check if request comes from expected source
-        # In production, implement proper signature validation with Safaricom's public key
-        
         user_agent = request.headers.get('User-Agent', '')
         if 'Apache-HttpClient' not in user_agent:
             logger.warning(f"⚠️ Unexpected User-Agent in callback: {user_agent}")
@@ -477,7 +586,7 @@ def simulate_callback_response(success=True, amount=100, phone="254708374149"):
                         "Item": [
                             {"Name": "Amount", "Value": amount},
                             {"Name": "MpesaReceiptNumber", "Value": f"TEST{int(time.time())}"},
-                            {"Name": "TransactionDate", "Value": int(datetime.now().strftime('%Y%m%d%H%M%S'))},
+                            {"Name": "TransactionDate", "Value": int(time.time())},
                             {"Name": "PhoneNumber", "Value": phone}
                         ]
                     }

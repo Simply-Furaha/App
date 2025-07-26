@@ -1,3 +1,4 @@
+// src/App.jsx - Updated with new admin routes
 import React, { useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { useSelector } from 'react-redux';
@@ -17,6 +18,8 @@ import AdminDashboard from './pages/AdminDashboard';
 import AdminUsers from './pages/AdminUsers';
 import AdminLoans from './pages/AdminLoans';
 import AdminInvestments from './pages/AdminInvestments';
+import AdminActivityLogs from './pages/AdminActivityLogs';
+import AdminOverpayments from './pages/AdminOverpayments';
 import NotFound from './pages/NotFound';
 import ContributionChart from './components/dashboard/ContributionChart';
 
@@ -59,7 +62,7 @@ const App = () => {
                 <Loans />
               </ProtectedRoute>
             } />
-              <Route path="/charts" element={
+            <Route path="/charts" element={
               <ProtectedRoute>
                 <ContributionChart />
               </ProtectedRoute>
@@ -104,6 +107,16 @@ const App = () => {
             <Route path="/admin/investments" element={
               <ProtectedRoute requireAdmin={true}>
                 <AdminInvestments />
+              </ProtectedRoute>
+            } />
+            <Route path="/admin/activity-logs" element={
+              <ProtectedRoute requireAdmin={true}>
+                <AdminActivityLogs />
+              </ProtectedRoute>
+            } />
+            <Route path="/admin/overpayments" element={
+              <ProtectedRoute requireAdmin={true}>
+                <AdminOverpayments />
               </ProtectedRoute>
             } />
             
