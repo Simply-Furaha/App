@@ -27,15 +27,5 @@ dist/
 build/
 #python cache files
 __pycache__/    
-#environment variables
-.env
-#log files
-*.log
-#coverage reports
-*.coverage
-#test results
-*.xml
-#test cache
-.cache/
-#migrations
-migrations/
+
+.venv/
